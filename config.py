@@ -24,6 +24,7 @@ class DocumentConfig:
     FONT_SIZES = {
         'title': Pt(22),        # 二号 - 标题
         'body': Pt(16),         # 三号 - 正文
+        'table': Pt(12),        # 四号 - 表格
         'page_num': Pt(14),     # 四号 - 页码
         'header': Pt(16)        # 三号 - 发文字号
     }
@@ -37,6 +38,14 @@ class DocumentConfig:
     
     # 段落缩进
     FIRST_LINE_INDENT = Pt(32)  # 首行缩进2字符
+    
+    # 列表缩进配置
+    LIST_INDENT = {
+        'level1_left': Mm(6),       # 一级列表左缩进（文字位置）
+        'level1_first_line': -Mm(6), # 一级列表首行缩进（悬挂缩进，符号位置）
+        'level2_left': Mm(12),       # 二级列表左缩进（文字位置，比一级多6mm）
+        'level2_first_line': -Mm(6)  # 二级列表首行缩进（悬挂缩进，符号位置）
+    }
     
     # 对齐方式
     ALIGNMENTS = {

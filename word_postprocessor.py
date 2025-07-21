@@ -1,5 +1,5 @@
 from docx import Document
-from docx.shared import Pt, Mm
+from docx.shared import Pt, Mm, RGBColor
 from docx.oxml.shared import OxmlElement, qn
 from typing import Dict, Any
 import re
@@ -129,18 +129,24 @@ class WordPostprocessor:
             run.font.name = self.config.FONTS['heiti']
             run.font.size = self.config.FONT_SIZES['body']
             run.bold = False
+            # 设置字体颜色为黑色
+            run.font.color.rgb = RGBColor(0, 0, 0)
             self._set_chinese_font(run, self.config.FONTS['heiti'])
         elif level == 2:
             # 二级标题：楷体，三号，不加粗
             run.font.name = self.config.FONTS['kaiti']
             run.font.size = self.config.FONT_SIZES['body']
             run.bold = False
+            # 设置字体颜色为黑色
+            run.font.color.rgb = RGBColor(0, 0, 0)
             self._set_chinese_font(run, self.config.FONTS['kaiti'])
         else:
             # 三级及以下标题：仿宋，三号，不加粗
             run.font.name = self.config.FONTS['fangsong']
             run.font.size = self.config.FONT_SIZES['body']
             run.bold = False
+            # 设置字体颜色为黑色
+            run.font.color.rgb = RGBColor(0, 0, 0)
             self._set_chinese_font(run, self.config.FONTS['fangsong'])
         
         # 设置段落格式
@@ -311,7 +317,7 @@ class WordPostprocessor:
                     for paragraph in cell.paragraphs:
                         for run in paragraph.runs:
                             run.font.name = self.config.FONTS['fangsong']
-                            run.font.size = self.config.FONT_SIZES['body']
+                            run.font.size = self.config.FONT_SIZES['table']  # 使用4号字体
                             self._set_chinese_font(run, self.config.FONTS['fangsong'])
                         
                         # 设置单元格段落格式
@@ -320,48 +326,45 @@ class WordPostprocessor:
                         paragraph_format.line_spacing = self.config.LINE_SPACING
     
     def format_lists(self):
-        """格式化列表 - 无序列表首级不缩进，有序列表作为段落处理"""
+        """格式化列表 - 保留Word列表格式，只调整缩进和字体"""
         for i, paragraph in enumerate(self.doc.paragraphs):
             
-            # 检查是否为列表项 - Compact样式通常是列表
-            if paragraph.style.name == 'Compact':
+            # 检查是否为列表项 - 检查Compact样式或有列表编号的段落
+            has_list_numbering = False
+            if hasattr(paragraph, '_element'):
+                numPr = paragraph._element.xpath('.//w:numPr')
+                has_list_numbering = bool(numPr)
+            
+            if paragraph.style.name == 'Compact' or has_list_numbering:
                 paragraph_format = paragraph.paragraph_format
-                full_text = paragraph.text.strip()
                 
-                print(f"DEBUG: 处理列表 '{full_text}'")
-                
-                # 通过文本内容判断是否为二级列表
-                is_sub_item = '子项' in full_text
+                # 通过列表级别判断是否为二级列表
+                is_sub_item = False
+                if hasattr(paragraph, '_element'):
+                    ilvl = paragraph._element.xpath('.//w:ilvl/@w:val')
+                    if ilvl and int(ilvl[0]) > 0:
+                        is_sub_item = True
                 
                 if is_sub_item:
-                    print("DEBUG: 识别为二级列表（子项）")
-                    # 二级列表：○ 符号，缩进0.6cm
-                    paragraph_format.left_indent = Mm(6)
-                    paragraph_format.first_line_indent = Pt(0)
+                    # 二级列表：使用配置文件中的缩进设置
+                    paragraph_format.left_indent = self.config.LIST_INDENT['level2_left']
+                    paragraph_format.first_line_indent = self.config.LIST_INDENT['level2_first_line']
                     paragraph_format.space_after = Pt(0)
                     paragraph_format.space_before = Pt(0)
                     paragraph.alignment = self.config.ALIGNMENTS['justify']
-                    
-                    final_text = '○' + full_text
                 else:
-                    print("DEBUG: 识别为一级列表")
-                    # 一级列表：• 符号，不缩进
-                    paragraph_format.left_indent = Pt(0)
-                    paragraph_format.first_line_indent = Pt(0)
+                    # 一级列表：使用配置文件中的悬挂缩进设置
+                    paragraph_format.left_indent = self.config.LIST_INDENT['level1_left']
+                    paragraph_format.first_line_indent = self.config.LIST_INDENT['level1_first_line']
                     paragraph_format.space_after = Pt(0)
                     paragraph_format.space_before = Pt(0)
                     paragraph.alignment = self.config.ALIGNMENTS['justify']
-                    
-                    final_text = '•' + full_text
                 
-                print(f"DEBUG: 最终文本: '{final_text}'")
-                
-                # 重新设置段落内容
-                paragraph.clear()
-                run = paragraph.add_run(final_text)
-                run.font.name = self.config.FONTS['fangsong']
-                run.font.size = self.config.FONT_SIZES['body']
-                self._set_chinese_font(run, self.config.FONTS['fangsong'])
+                # 设置字体格式（保留原有文本，只改字体）
+                for run in paragraph.runs:
+                    run.font.name = self.config.FONTS['fangsong']
+                    run.font.size = self.config.FONT_SIZES['body']
+                    self._set_chinese_font(run, self.config.FONTS['fangsong'])
             
             # 检查有序列表 - 包含数字序号的段落
             elif re.match(r'^\d+\.', paragraph.text.strip()):

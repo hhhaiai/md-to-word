@@ -241,13 +241,16 @@ class MarkdownPreprocessor:
         i = 0
         
         while i < len(lines):
-            line = lines[i].strip()
+            line = lines[i]
+            line_stripped = line.strip()
             
             # 检测有序列表项 (例: "1. **标题**")
-            if re.match(r'^\d+\.\s+', line):
-                # 保留序号，但添加特殊处理防止pandoc识别为列表
+            if re.match(r'^\d+\.\s+', line_stripped):
+                # 保留原始缩进，但添加特殊处理防止pandoc识别为列表
                 # 在序号后添加全角空格，这样pandoc不会将其识别为列表
-                modified_line = re.sub(r'^(\d+)\.\s+', r'\1.　', line)
+                # 获取原始行的缩进
+                indent = len(line) - len(line.lstrip())
+                modified_line = ' ' * indent + re.sub(r'^(\d+)\.\s+', r'\1.　', line_stripped)
                 processed_lines.append(modified_line)
                 
                 # 检查后续行是否为列表项的续行内容

@@ -87,13 +87,10 @@ def main():
         
         # 应用公文格式
         postprocessor = WordPostprocessor()
-        postprocessor.apply_formatting(temp_output, preprocessed_data)
+        postprocessor.apply_formatting(temp_output, preprocessed_data, preprocessed_data['content'])
         
         # 格式化表格（如果有）
         postprocessor.format_tables()
-        
-        # 格式化列表
-        postprocessor.format_lists()
         
         print(f"转换完成！输出文件: {output_path}")
         
