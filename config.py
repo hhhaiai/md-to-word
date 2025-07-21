@@ -45,3 +45,30 @@ class DocumentConfig:
         'left': WD_PARAGRAPH_ALIGNMENT.LEFT,
         'right': WD_PARAGRAPH_ALIGNMENT.RIGHT
     }
+    
+    # Pandoc相关配置
+    PANDOC_CONFIG = {
+        # 数学公式处理方式
+        'math_method': 'mathml',  # 使用MathML渲染数学公式
+        
+        # 表格处理
+        'table_style': 'grid',  # 表格样式
+        'table_caption': True,  # 是否显示表格标题
+        
+        # 列表处理
+        'list_style': 'chinese',  # 中文列表样式
+        
+        # 图片处理
+        'image_width': '100%',  # 图片宽度
+        'image_dpi': 300,  # 图片DPI
+        
+        # 引用处理
+        'citation_style': 'gb7714',  # 中文引用格式
+        
+        # 其他pandoc参数
+        'extra_args': [
+            '--preserve-tabs',
+            '--wrap=none',
+            '--reference-links'
+        ]
+    }

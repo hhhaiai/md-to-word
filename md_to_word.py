@@ -4,8 +4,9 @@ import os
 import sys
 from pathlib import Path
 
-from markdown_parser import MarkdownParser
-from word_generator import WordGenerator
+from markdown_preprocessor import MarkdownPreprocessor
+from pandoc_processor import PandocProcessor
+from word_postprocessor import WordPostprocessor
 
 def main():
     """主程序入口"""
@@ -57,17 +58,42 @@ def main():
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
     try:
-        print(f"正在解析Markdown文件: {input_path}")
+        print(f"正在预处理Markdown文件: {input_path}")
         
-        # 解析Markdown文件
-        parser = MarkdownParser()
-        parsed_data = parser.parse_file(str(input_path))
+        # 预处理Markdown文件
+        preprocessor = MarkdownPreprocessor()
+        preprocessed_data = preprocessor.preprocess_file(str(input_path))
         
-        print(f"正在生成Word文档: {output_path}")
         
-        # 生成Word文档
-        generator = WordGenerator()
-        generator.create_document(parsed_data, str(output_path))
+        print(f"正在使用Pandoc转换为Word文档: {output_path}")
+        
+        # 使用pandoc转换为Word文档
+        pandoc_processor = PandocProcessor()
+        
+        # 检查pandoc是否可用
+        if not pandoc_processor.check_pandoc_available():
+            print("错误：Pandoc未安装或不可用。请安装pandoc后再试。", file=sys.stderr)
+            print("安装说明：https://pandoc.org/installing.html", file=sys.stderr)
+            sys.exit(1)
+        
+        # 转换为Word文档
+        temp_output = pandoc_processor.convert_markdown_to_docx(
+            preprocessed_data['content'], 
+            str(output_path),
+            title=None  # 不在pandoc阶段添加标题，后处理时添加
+        )
+        
+        print(f"正在应用公文格式...")
+        
+        # 应用公文格式
+        postprocessor = WordPostprocessor()
+        postprocessor.apply_formatting(temp_output, preprocessed_data)
+        
+        # 格式化表格（如果有）
+        postprocessor.format_tables()
+        
+        # 格式化列表
+        postprocessor.format_lists()
         
         print(f"转换完成！输出文件: {output_path}")
         
