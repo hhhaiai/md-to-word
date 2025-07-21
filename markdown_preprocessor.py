@@ -26,7 +26,6 @@ class MarkdownPreprocessor:
         return {
             'title': title_from_filename,
             'content': processed_content,
-            'date': metadata.get('date', ''),
             'attachments': metadata.get('attachments', [])
         }
     
@@ -50,72 +49,22 @@ class MarkdownPreprocessor:
         return processed_content.strip()
     
     def _extract_metadata(self, content: str) -> Dict[str, Any]:
-        """提取日期和附件信息"""
+        """提取附件信息"""
         lines = content.split('\n')
         metadata = {
-            'date': '',
             'attachments': []
         }
         
         for line in lines:
             line = line.strip()
             
-            # 检测日期（年月日格式）
-            if re.match(r'.*\d{4}年.*\d{1,2}月.*\d{1,2}日.*', line):
-                metadata['date'] = self._convert_date_to_chinese(line)
-            
             # 检测附件说明
-            elif line.startswith('附件') or '附件' in line:
+            if line.startswith('附件') or '附件' in line:
                 metadata['attachments'].append(line)
         
         return metadata
     
-    def _convert_date_to_chinese(self, date_str: str) -> str:
-        """将阿拉伯数字日期转换为汉字数字日期"""
-        # 数字到汉字的映射
-        num_map = {
-            '0': '〇', '1': '一', '2': '二', '3': '三', '4': '四',
-            '5': '五', '6': '六', '7': '七', '8': '八', '9': '九'
-        }
-        
-        # 提取年月日
-        year_match = re.search(r'(\d{4})年', date_str)
-        month_match = re.search(r'(\d{1,2})月', date_str)
-        day_match = re.search(r'(\d{1,2})日', date_str)
-        
-        if year_match and month_match and day_match:
-            year = year_match.group(1)
-            month = month_match.group(1)
-            day = day_match.group(1)
-            
-            # 转换年份
-            chinese_year = ''.join([num_map[d] for d in year])
-            
-            # 转换月份
-            if len(month) == 1:
-                chinese_month = num_map[month]
-            else:
-                if month[0] == '1':
-                    chinese_month = '十' + (num_map[month[1]] if month[1] != '0' else '')
-                else:
-                    chinese_month = num_map[month[0]] + '十' + (num_map[month[1]] if month[1] != '0' else '')
-            
-            # 转换日期
-            if len(day) == 1:
-                chinese_day = num_map[day]
-            else:
-                if day[0] == '1':
-                    chinese_day = '十' + (num_map[day[1]] if day[1] != '0' else '')
-                elif day[0] == '2':
-                    chinese_day = '二十' + (num_map[day[1]] if day[1] != '0' else '')
-                elif day[0] == '3':
-                    chinese_day = '三十' + (num_map[day[1]] if day[1] != '0' else '')
-                else:
-                    chinese_day = num_map[day[0]] + '十' + (num_map[day[1]] if day[1] != '0' else '')
-            
-            return f"{chinese_year}年{chinese_month}月{chinese_day}日"
-        
-        return date_str
+
     
     def _filter_yaml_frontmatter(self, lines: List[str]) -> List[str]:
         """过滤YAML front matter"""

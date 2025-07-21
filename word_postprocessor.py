@@ -19,7 +19,7 @@ class WordPostprocessor:
         
         Args:
             docx_path: pandoc生成的Word文档路径
-            metadata: 包含标题、日期、附件等元数据的字典
+            metadata: 包含标题、附件等元数据的字典
             original_markdown: 原始markdown内容，用于判断列表层级
             
         Returns:
@@ -45,10 +45,6 @@ class WordPostprocessor:
         if metadata.get('attachments'):
             for attachment in metadata['attachments']:
                 self._add_attachment(attachment)
-        
-        # 添加成文日期
-        if metadata.get('date'):
-            self._add_date(metadata['date'])
         
         # 添加页码
         self._add_page_numbers()
@@ -235,22 +231,7 @@ class WordPostprocessor:
         paragraph_format.line_spacing = self.config.LINE_SPACING
         paragraph_format.space_after = Pt(0)
     
-    def _add_date(self, date: str):
-        """添加成文日期"""
-        paragraph = self.doc.add_paragraph()
-        paragraph.alignment = self.config.ALIGNMENTS['right']
-        
-        run = paragraph.add_run(date)
-        run.font.name = self.config.FONTS['fangsong']
-        run.font.size = self.config.FONT_SIZES['body']
-        
-        self._set_chinese_font(run, self.config.FONTS['fangsong'])
-        
-        # 设置段落格式
-        paragraph_format = paragraph.paragraph_format
-        paragraph_format.line_spacing = self.config.LINE_SPACING
-        paragraph_format.space_after = Pt(0)
-        paragraph_format.space_before = Pt(12)
+
     
     def _add_page_numbers(self):
         """添加页码"""

@@ -30,7 +30,7 @@ class DocumentConfig:
     }
     
     # 行距配置
-    LINE_SPACING = Pt(28.8)     # 固定值28.8磅
+    LINE_SPACING = Pt(25.5)     # 固定值25.5磅
     
     # 版心配置
     CHARS_PER_LINE = 28         # 每行字符数
