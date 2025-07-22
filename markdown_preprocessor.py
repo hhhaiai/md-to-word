@@ -20,6 +20,9 @@ class MarkdownPreprocessor:
     UNORDERED_LIST_REPLACE_PATTERN = re.compile(r'^(\s*)\*\s+')
     ORDERED_LIST_DOT_REPLACE_PATTERN = re.compile(r'^(\d+)\.\s+')
     INDENTED_LIST_PATTERN = re.compile(r'^\s+[-*]')
+    # 综合的图表标题模式：匹配 图/图片/表/表格/图表 + 可选空格 + 数字 + 可选空格 + 标点(:：.) + 描述
+    CAPTION_PATTERN = re.compile(r'^(图片?|表格?|图表)\s*(\d+)\s*[:：.]\s*(.*)$')
+    TABLE_ROW_PATTERN = re.compile(r'^\s*\|')  # 检测表格行
     HEADING_PATTERNS = [
         re.compile(r'^[一二三四五六七八九十]+、'),
         re.compile(r'^（[一二三四五六七八九十]+）'),
@@ -59,6 +62,7 @@ class MarkdownPreprocessor:
         lines = self._filter_yaml_frontmatter(lines)
         lines = self._filter_ending_metadata(lines)
         lines = self._remove_bold_formatting(lines)
+        lines = self._reposition_captions(lines)  # 在合并行之前重新定位标题
         lines = self._remove_numbered_list_spaces(lines)
         lines = self._convert_ordered_lists_to_paragraphs(lines)
         lines = self._fix_unordered_list_asterisks(lines)
@@ -283,9 +287,6 @@ class MarkdownPreprocessor:
     
     def _is_special_format_line(self, line: str) -> bool:
         """检查是否为特殊格式的行（标题、附件、表格、列表等）"""
-        # 图表caption识别模式
-        caption_pattern = re.compile(r'^[图表](?:片|格|表)?\s*\d+\s*[.:：]\s*')
-        
         # 检查各种不应合并的格式
         special_checks = [
             line.startswith('#'),              # 标题
@@ -297,7 +298,7 @@ class MarkdownPreprocessor:
             line == '$$',                      # 数学公式块分隔符
             line.startswith('$$'),             # 数学公式开始/结束行
             line.endswith('$$'),               # 数学公式开始/结束行
-            caption_pattern.match(line),       # 图表caption
+            self.CAPTION_PATTERN.match(line),  # 图表caption（使用预编译的模式）
             self.ORDERED_LIST_PATTERN.match(line),     # 有序列表
             self.INDENTED_LIST_PATTERN.match(line),    # 带缩进的列表项
         ]
@@ -371,5 +372,118 @@ class MarkdownPreprocessor:
                 processed_lines.append(processed_line)
             else:
                 processed_lines.append(line)
+        
+        return processed_lines
+    
+    def _reposition_captions(self, lines: List[str]) -> List[str]:
+        """重新定位图表标题，确保标题始终在图表后面"""
+        processed_lines = []
+        i = 0
+        
+        while i < len(lines):
+            line = lines[i].strip()
+            
+            # 检查是否为图表标题
+            caption_match = self.CAPTION_PATTERN.match(line)
+            if caption_match:
+                caption_type = caption_match.group(1)  # 图/图片/表/表格/图表
+                caption_number = caption_match.group(2)  # 数字
+                
+                # 判断标题类型
+                is_figure_caption = caption_type in ['图', '图片', '图表']
+                is_table_caption = caption_type in ['表', '表格']
+                
+                # 首先检查标题是否已经在正确位置（紧跟在图表后面）
+                # 向前查找最近的图表元素
+                is_after_element = False
+                empty_lines_before = 0
+                
+                for j in range(i - 1, max(i - 10, -1), -1):  # 最多向前查找10行
+                    prev_line = lines[j].strip()
+                    
+                    if not prev_line:  # 空行
+                        empty_lines_before += 1
+                        continue
+                    
+                    # 检查是否为对应类型的元素
+                    if is_figure_caption and (self.MARKDOWN_IMAGE_PATTERN.match(prev_line) or 
+                                            self.OBSIDIAN_IMAGE_PATTERN.match(prev_line)):
+                        # 找到了前面的图片，如果中间空行不超过2行，认为caption属于这个图片
+                        if empty_lines_before <= 2:
+                            is_after_element = True
+                        break
+                    elif is_table_caption and self.TABLE_ROW_PATTERN.match(prev_line):
+                        # 检查是否是完整表格的最后一行
+                        # 继续向前查找，确认这是表格的一部分
+                        is_table_end = True
+                        if j + 1 < len(lines):
+                            next_line = lines[j + 1].strip()
+                            # 如果下一行也是表格行，说明不是表格结束
+                            if next_line and self.TABLE_ROW_PATTERN.match(next_line):
+                                is_table_end = False
+                        
+                        if is_table_end and empty_lines_before <= 2:
+                            is_after_element = True
+                        break
+                    else:
+                        # 遇到其他内容，停止查找
+                        break
+                
+                # 如果caption已经在正确位置（某个图表元素后面），保持不动
+                if is_after_element:
+                    processed_lines.append(lines[i])
+                    i += 1
+                    continue
+                
+                # 标题不在正确位置，向后查找对应的图表元素
+                found_element = False
+                element_index = -1
+                
+                # 查找范围：从下一行开始，最多查找20行
+                for j in range(i + 1, min(i + 21, len(lines))):
+                    check_line = lines[j].strip()
+                    
+                    # 如果遇到另一个标题，停止查找
+                    if self.CAPTION_PATTERN.match(check_line):
+                        break
+                    
+                    # 检查是否为图片
+                    if is_figure_caption and (self.MARKDOWN_IMAGE_PATTERN.match(check_line) or 
+                                            self.OBSIDIAN_IMAGE_PATTERN.match(check_line)):
+                        found_element = True
+                        element_index = j
+                        break
+                    
+                    # 检查是否为表格（连续的表格行）
+                    if is_table_caption and self.TABLE_ROW_PATTERN.match(check_line):
+                        # 确认是表格：检查是否有连续的表格行
+                        if j + 1 < len(lines) and self.TABLE_ROW_PATTERN.match(lines[j + 1].strip()):
+                            found_element = True
+                            element_index = j
+                            # 找到表格的结束位置
+                            while element_index + 1 < len(lines) and self.TABLE_ROW_PATTERN.match(lines[element_index + 1].strip()):
+                                element_index += 1
+                            break
+                
+                if found_element:
+                    # 标题在元素前面，需要移动到元素后面
+                    # 保存原始标题行（包含缩进）
+                    caption_line = lines[i]
+                    
+                    # 跳过当前标题行
+                    i += 1
+                    
+                    # 添加从标题后到元素（含元素）的所有行
+                    while i <= element_index:
+                        processed_lines.append(lines[i])
+                        i += 1
+                    
+                    # 在元素后添加标题
+                    processed_lines.append(caption_line)
+                    continue
+            
+            # 不是需要移动的标题，或标题已经在正确位置，直接添加
+            processed_lines.append(lines[i])
+            i += 1
         
         return processed_lines

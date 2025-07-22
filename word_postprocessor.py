@@ -107,8 +107,8 @@ class WordPostprocessor:
         markdown_image_pattern = re.compile(r'!\[([^\]]*)\]\(([^)]+)\)')
         obsidian_image_pattern = re.compile(r'!\[\[([^\]]+)\]\]')
         
-        # 更宽泛的caption识别模式，匹配各种图表格式
-        caption_pattern = re.compile(r'^(\*\*)?[图表](?:片|格|表)?\s*\d+\s*[.:：]\s*')
+        # 综合的图表标题模式：匹配 图/图片/表/表格/图表 + 可选空格 + 数字 + 可选空格 + 标点(:：.) + 描述
+        caption_pattern = re.compile(r'^(图片?|表格?|图表)\s*(\d+)\s*[:：.]\s*')
         
         # 图片计数器
         image_counter = 0
@@ -243,11 +243,11 @@ class WordPostprocessor:
     def _process_captions(self):
         """处理并格式化所有图片和表格caption，统一放在图表下方"""
         try:
-            # 更宽泛的caption识别和标准化模式
+            # 综合的caption识别和标准化模式
             # 匹配: 图/图片/图表 + 可选空格 + 数字 + 可选空格 + [.:：] + 内容
-            image_pattern = re.compile(r'^(\*\*)?图(?:片|表)?\s*(\d+)\s*[.:：]\s*(.*?)(\*\*)?$')
+            image_pattern = re.compile(r'^(图片?|图表)\s*(\d+)\s*[.:：]\s*(.*?)$')
             # 匹配: 表/表格 + 可选空格 + 数字 + 可选空格 + [.:：] + 内容  
-            table_pattern = re.compile(r'^(\*\*)?表(?:格)?\s*(\d+)\s*[.:：]\s*(.*?)(\*\*)?$')
+            table_pattern = re.compile(r'^(表格?)\s*(\d+)\s*[.:：]\s*(.*?)$')
             
             # 第一步：标准化所有caption格式，但不移动位置
             for paragraph in self.doc.paragraphs:
