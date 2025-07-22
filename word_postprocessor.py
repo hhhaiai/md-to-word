@@ -6,6 +6,7 @@ import os
 import re
 
 from config import DocumentConfig
+from constants import Patterns
 from formatters import (
     PageFormatter, 
     ParagraphFormatter, 
@@ -22,6 +23,11 @@ class WordPostprocessor:
     重构后的Word文档后处理器
     使用组合模式，将不同的格式化功能委托给专门的格式化器类
     解决了原有的"God Object"反模式问题
+    
+    特别处理：包含数学公式的图片caption
+    - 检测包含LaTeX数学公式的caption（如 $\\theta$, $\\omega$）
+    - 使用特殊的分离处理逻辑，避免破坏MathML内容
+    - 通过元素属性标记已处理的caption，防止重复处理
     """
     
     def __init__(self):
@@ -82,6 +88,28 @@ class WordPostprocessor:
         self.doc.save(docx_path)
         return docx_path
     
+    def _has_math_formula(self, paragraph) -> bool:
+        """检查段落是否包含数学公式"""
+        try:
+            # 1. 检查段落的XML内容是否包含MathML元素（转换后的数学公式）
+            xml_str = paragraph._element.xml
+            if 'oMath' in xml_str or 'oMathPara' in xml_str:
+                return True
+            
+            # 2. 检查段落文本是否包含LaTeX格式的数学公式（原始格式）
+            text = paragraph.text
+            if text:
+                # 检查行内数学公式 $...$
+                if Patterns.LATEX_INLINE_MATH_PATTERN.search(text):
+                    return True
+                # 检查块级数学公式 $$...$$
+                if Patterns.LATEX_BLOCK_MATH_PATTERN.search(text):
+                    return True
+            
+            return False
+        except:
+            return False
+    
     # 保留原有的公共方法以维持向后兼容性
     def format_tables(self):
         """格式化表格（向后兼容方法）"""
@@ -102,6 +130,9 @@ class WordPostprocessor:
         """处理文档中的图片语法并插入实际图片"""
         # 初始化图片查找器
         self.image_finder = MarkdownPreprocessor()
+        
+        # 初始化已处理的数学caption文本集合
+        self._processed_math_caption_texts = set()
         
         # 定义图片语法模式
         markdown_image_pattern = re.compile(r'!\[([^\]]*)\]\(([^)]+)\)')
@@ -203,11 +234,19 @@ class WordPostprocessor:
         try:
             # 检查图片路径是否存在
             if not image_info['path'] or not os.path.exists(image_info['path']):
-                # 如果图片不存在，保留原文本但显示警告
-                print(f"警告：找不到图片 {image_info.get('original', 'unknown')}")
+                # 如果图片不存在，保留原文本
                 return
             
-            # 处理同一段落中的caption分离
+            # 检查段落是否包含数学公式
+            has_math = self._has_math_formula(paragraph)
+            
+            # 如果包含数学公式，需要特殊处理（优先处理）
+            if has_math:
+                # 分离处理：在当前段落前插入图片段落，保留原段落作为caption
+                self._insert_image_before_math_caption(paragraph, image_info)
+                return
+            
+            # 处理同一段落中的caption分离（只在没有数学公式时处理）
             if image_info.get('caption_in_same_para'):
                 # 在当前段落后插入caption段落
                 p_element = paragraph._element
@@ -220,7 +259,7 @@ class WordPostprocessor:
                 # 将caption段落移动到图片段落之后
                 parent.insert(parent.index(p_element) + 1, caption_p._element)
             
-            # 清空原段落文本
+            # 如果没有数学公式，可以安全地清空段落
             paragraph.clear()
             
             # 添加图片到段落
@@ -236,9 +275,85 @@ class WordPostprocessor:
                 self.image_formatter._set_image_wrap(drawing_elements[0])
                 
         except Exception as e:
-            print(f"插入图片时出错: {e}")
             # 保留原始文本
             paragraph.text = image_info['original']
+    
+    def _remove_image_syntax_only(self, paragraph, image_info: Dict):
+        """只移除图片语法部分，保留其他内容（包括数学公式）"""
+        try:
+            import re
+            
+            # 获取原始文本
+            original_text = paragraph.text
+            
+            # 移除图片语法部分
+            # 移除 Obsidian 格式 ![[filename]]
+            cleaned_text = re.sub(r'!\[\[[^\]]+\]\]', '', original_text)
+            # 移除 Markdown 格式 ![alt](path)
+            cleaned_text = re.sub(r'!\[[^\]]*\]\([^)]+\)', '', cleaned_text)
+            
+            # 清理多余的空格
+            cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
+            
+            # 只有当清理后的文本确实不同时才更新
+            if cleaned_text != original_text:
+                
+                # 需要更精细地处理，避免破坏MathML
+                # 遍历段落中的运行，只修改文本部分
+                for run in paragraph.runs:
+                    if run.text:
+                        # 检查这个运行是否包含图片语法
+                        if '![[' in run.text or '![' in run.text:
+                            # 清理这个运行中的图片语法
+                            new_run_text = re.sub(r'!\[\[[^\]]+\]\]', '', run.text)
+                            new_run_text = re.sub(r'!\[[^\]]*\]\([^)]+\)', '', new_run_text)
+                            new_run_text = re.sub(r'\s+', ' ', new_run_text).strip()
+                            
+                            if new_run_text != run.text:
+                                run.text = new_run_text
+                                
+        except Exception as e:
+            pass  # 静默处理错误
+    
+    def _insert_image_before_math_caption(self, caption_paragraph, image_info: Dict):
+        """在包含数学公式的caption前插入图片段落"""
+        try:
+            # 创建新的图片段落
+            p_element = caption_paragraph._element
+            parent = p_element.getparent()
+            
+            # 在当前段落前创建图片段落
+            image_p = self.doc.add_paragraph()
+            
+            # 添加图片到新段落
+            run = image_p.add_run()
+            picture = run.add_picture(image_info['path'], width=Inches(5))
+            
+            # 设置图片段落居中
+            image_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            # 设置图片文字环绕
+            drawing_elements = run._element.xpath('.//w:drawing')
+            if drawing_elements:
+                self.image_formatter._set_image_wrap(drawing_elements[0])
+            
+            # 将图片段落移动到caption段落前面
+            parent.insert(parent.index(p_element), image_p._element)
+            
+            # 清理caption段落中的图片语法，但保留数学公式
+            self._remove_image_syntax_only(caption_paragraph, image_info)
+            
+            # 记录处理后的caption文本，用于跳过重复处理
+            cleaned_text = caption_paragraph.text.strip()
+            if cleaned_text:
+                self._processed_math_caption_texts.add(cleaned_text)
+            
+            # 直接格式化这个caption，因为它包含数学公式
+            self.image_formatter._format_image_caption(caption_paragraph)
+            
+        except Exception as e:
+            # 降级处理：只移除图片语法
+            self._remove_image_syntax_only(caption_paragraph, image_info)
     
     def _process_captions(self):
         """处理并格式化所有图片和表格caption，统一放在图表下方"""
@@ -253,13 +368,36 @@ class WordPostprocessor:
             for paragraph in self.doc.paragraphs:
                 text = paragraph.text.strip()
                 if text:
+                    # 检查是否是已处理的数学caption，跳过避免重复处理
+                    if hasattr(self, '_processed_math_caption_texts') and text in self._processed_math_caption_texts:
+                        continue
+                    
+                    # 检查是否包含数学公式，如果包含则跳过文本替换
+                    has_math = self._has_math_formula(paragraph)
+                    
+                    # 检查是否已经是标准化格式 (避免重复处理)
+                    # 修改检测逻辑：图X. 或 图 X: 都视为已处理
+                    is_already_standardized = (
+                        (text.startswith('图') and '. ' in text) or  # 图5. xxx
+                        (text.startswith('图 ') and (':' in text or '：' in text))  # 图 5: xxx or 图 5： xxx
+                    )
+                    
                     # 处理图片caption
                     image_match = image_pattern.match(text)
-                    if image_match:
+                    if image_match and not is_already_standardized:
                         number = image_match.group(2)
                         content = image_match.group(3)
-                        # 标准化为: 图1. 内容
-                        paragraph.text = f"图{number}. {content}"
+                        
+                        if not has_math:
+                            # 如果没有数学公式，可以安全地替换文本
+                            paragraph.text = f"图{number}. {content}"
+                        else:
+                            # 如果有数学公式，只进行格式化，不替换文本
+                            pass
+                        
+                        self.image_formatter._format_image_caption(paragraph)
+                    elif is_already_standardized and '图' in text:
+                        # 如果已经是标准化格式，只进行格式化
                         self.image_formatter._format_image_caption(paragraph)
                     
                     else:
@@ -268,14 +406,18 @@ class WordPostprocessor:
                         if table_match:
                             number = table_match.group(2)
                             content = table_match.group(3)
-                            # 标准化为: 表1. 内容
-                            paragraph.text = f"表{number}. {content}"
+                            
+                            if not has_math:
+                                # 如果没有数学公式，可以安全地替换文本
+                                paragraph.text = f"表{number}. {content}"
+                            else:
+                                # 如果有数学公式，只进行格式化，不替换文本
+                                pass
+                            
                             self._format_table_caption(paragraph)
             
-            print("Caption格式标准化完成，位置保持不变")
-                        
         except Exception as e:
-            print(f"处理caption时出错: {e}")
+            pass  # 静默处理错误
     
     def _format_table_caption(self, paragraph):
         """格式化表格caption，与图片caption相同的格式"""
@@ -298,7 +440,7 @@ class WordPostprocessor:
             paragraph_format.first_line_indent = Pt(0)  # caption不缩进
             
         except AttributeError as e:
-            print(f"警告：格式化表格caption时出现属性错误: {e}")
+            pass  # 静默处理属性错误
         except Exception as e:
-            print(f"警告：格式化表格caption时出现错误: {e}")
+            pass  # 静默处理其他错误
     

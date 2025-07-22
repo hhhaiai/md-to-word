@@ -12,6 +12,7 @@ import re
 
 from config import DocumentConfig
 from xpath_cache import OptimizedXMLProcessor
+from constants import Patterns, DocumentFormats
 from exceptions import (
     DocumentFormattingError, 
     ImageProcessingError, 
@@ -42,6 +43,28 @@ class BaseFormatter:
         
         rFonts.set(qn('w:eastAsia'), font_name)
         rFonts.set(qn('w:hint'), 'eastAsia')
+    
+    def _has_math_formula(self, paragraph) -> bool:
+        """检查段落是否包含数学公式（统一方法，避免重复）"""
+        try:
+            # 1. 检查段落的XML内容是否包含MathML元素（转换后的数学公式）
+            xml_str = paragraph._element.xml
+            if 'oMath' in xml_str or 'oMathPara' in xml_str:
+                return True
+            
+            # 2. 检查段落文本是否包含LaTeX格式的数学公式（原始格式）
+            text = paragraph.text
+            if text:
+                # 检查行内数学公式 $...$
+                if Patterns.LATEX_INLINE_MATH_PATTERN.search(text):
+                    return True
+                # 检查块级数学公式 $$...$$
+                if Patterns.LATEX_BLOCK_MATH_PATTERN.search(text):
+                    return True
+            
+            return False
+        except:
+            return False
 
 
 class PageFormatter(BaseFormatter):
@@ -106,14 +129,6 @@ class PageFormatter(BaseFormatter):
 class ParagraphFormatter(BaseFormatter):
     """段落格式化器 - 负责标题和正文段落的格式化"""
     
-    # 预编译的正则表达式模式
-    HEADING_PATTERNS = [
-        re.compile(r'^[一二三四五六七八九十]+、'),  # 一、二、三、
-        re.compile(r'^（[一二三四五六七八九十]+）'),  # （一）（二）（三）
-        re.compile(r'^[0-9]+\.'),  # 1. 2. 3.
-        re.compile(r'^[0-9]+、'),  # 1、2、3、
-    ]
-    
     def format_document_content(self, doc: Document, metadata: Dict[str, Any]):
         """格式化文档内容，应用公文格式要求"""
         for paragraph in doc.paragraphs:
@@ -136,7 +151,7 @@ class ParagraphFormatter(BaseFormatter):
         # 检查段落内容是否以中文数字或序号开头（如"一、"、"（一）"等）
         text = paragraph.text.strip()
         
-        for pattern in self.HEADING_PATTERNS:
+        for pattern in Patterns.HEADING_PATTERNS:
             if pattern.match(text):
                 return True
         
@@ -214,11 +229,11 @@ class ParagraphFormatter(BaseFormatter):
             return 3  # ##### → 仿宋 (fallback)
         
         # 根据文本内容判断级别（处理中文标题格式）
-        if self.HEADING_PATTERNS[0].match(text):
+        if Patterns.HEADING_PATTERNS[0].match(text):
             return 1  # 一、二、三、 → 黑体
-        elif self.HEADING_PATTERNS[1].match(text):
+        elif Patterns.HEADING_PATTERNS[1].match(text):
             return 2  # （一）（二）（三） → 楷体
-        elif self.HEADING_PATTERNS[2].match(text) or self.HEADING_PATTERNS[3].match(text):
+        elif Patterns.HEADING_PATTERNS[2].match(text) or Patterns.HEADING_PATTERNS[3].match(text):
             return 3  # 1. 2. 3. 或 1、2、3、 → 仿宋
         
         return 3  # 默认三级标题
@@ -244,15 +259,6 @@ class ParagraphFormatter(BaseFormatter):
         paragraph_format.line_spacing = self.config.LINE_SPACING
         paragraph_format.space_after = Pt(0)
         paragraph_format.space_before = Pt(0)
-    
-    def _has_math_formula(self, paragraph) -> bool:
-        """检查段落是否包含数学公式"""
-        try:
-            # 检查段落的XML内容是否包含MathML元素
-            xml_str = paragraph._element.xml
-            return 'oMath' in xml_str or 'oMathPara' in xml_str
-        except:
-            return False
     
     def _format_paragraph_with_math(self, paragraph, level: int, is_heading: bool):
         """格式化包含数学公式的段落，保留数学公式内容"""
@@ -509,10 +515,6 @@ class TableFormatter(BaseFormatter):
 class ListFormatter(BaseFormatter):
     """列表格式化器 - 负责有序和无序列表的格式化"""
     
-    # 预编译的正则表达式模式
-    ORDERED_LIST_PATTERN = re.compile(r'^\d+\.')
-    ORDERED_LIST_SPLIT_PATTERN = re.compile(r'(\d+\.)')
-    
     def __init__(self, config: DocumentConfig = None):
         super().__init__(config)
         self.xml_processor = OptimizedXMLProcessor()
@@ -534,7 +536,7 @@ class ListFormatter(BaseFormatter):
             return 'word_list'
         
         # 检查是否为有序列表（包含数字序号的段落）
-        if self.ORDERED_LIST_PATTERN.match(paragraph.text.strip()):
+        if Patterns.ORDERED_LIST_PATTERN.match(paragraph.text.strip()):
             return 'ordered_list'
             
         return 'none'
@@ -605,7 +607,7 @@ class ListFormatter(BaseFormatter):
         
         # 检查是否需要分割段落（包含多个列表项）
         text = paragraph.text.strip()
-        items = self.ORDERED_LIST_SPLIT_PATTERN.split(text)[1:]  # 分割并保留序号
+        items = Patterns.ORDERED_LIST_SPLIT_PATTERN.split(text)[1:]  # 分割并保留序号
         
         if len(items) > 2:  # 包含多个列表项
             self._split_multi_item_paragraph(paragraph, items)
@@ -697,28 +699,9 @@ class ListFormatter(BaseFormatter):
 class ImageFormatter(BaseFormatter):
     """图片格式化器 - 负责图片处理和格式化"""
     
-    # 预编译的正则表达式模式
-    IMAGE_CAPTION_PATTERN = re.compile(r'^图\s*\d+\s*[:：]\s*')
-    CHINESE_CHAR_PATTERN = re.compile(r'[\u4e00-\u9fff]')
-    IMAGE_FILENAME_PATTERNS = [
-        re.compile(r'Pasted image \d+'),
-        re.compile(r'^006Fd7o3gy1.*\.(png|jpg|jpeg|gif|bmp)$'),
-        re.compile(r'^Screenshot.*\.(png|jpg|jpeg|gif|bmp)$'),
-        re.compile(r'^.*\.(png|jpg|jpeg|gif|bmp)$'),
-    ]
-    
     def __init__(self, config: DocumentConfig = None):
         super().__init__(config)
         self.xml_processor = OptimizedXMLProcessor()
-        
-    def _has_math_formula(self, paragraph) -> bool:
-        """检查段落是否包含数学公式"""
-        try:
-            # 检查段落的XML内容是否包含MathML元素
-            xml_str = paragraph._element.xml
-            return 'oMath' in xml_str or 'oMathPara' in xml_str
-        except:
-            return False
     
     def format_images(self, doc: Document):
         """格式化文档中的图片 - 使用优化的单次遍历，并移除所有图片相关文件名"""
@@ -757,7 +740,7 @@ class ImageFormatter(BaseFormatter):
                 
         except Exception as e:
             # 单个图片格式化失败不应中断整个处理流程
-            print(f"警告：格式化单个图片时出现错误: {e}")
+            pass  # 静默处理错误
     
     def _remove_image_name(self, drawing_element):
         """移除图片的文件名显示 - 使用优化的批量处理"""
@@ -809,23 +792,14 @@ class ImageFormatter(BaseFormatter):
                     
         except (AttributeError, KeyError) as e:
             # XML结构访问错误，记录但不中断
-            print(f"警告：移除图片名称时出现结构错误: {e}")
+            pass  # 静默处理结构错误
         except Exception as e:
-            print(f"警告：移除图片名称时出现错误: {e}")
+            pass  # 静默处理错误
     
     def _remove_image_captions_from_all_paragraphs(self, doc: Document):
         """扫描所有段落，移除图片文件名文本（不依赖绘制元素）"""
         try:
-            image_filename_patterns = [
-                'Pasted image',  # Obsidian粘贴的图片
-                '006Fd7o3gy1',   # 微博图片ID
-                '.png',          # PNG文件扩展名
-                '.jpg',          # JPG文件扩展名 
-                '.jpeg',         # JPEG文件扩展名
-                '.gif',          # GIF文件扩展名
-                '.bmp',          # BMP文件扩展名
-                '.webp'          # WEBP文件扩展名
-            ]
+            image_filename_patterns = DocumentFormats.IMAGE_CLEANUP_PATTERNS
             
             for paragraph in doc.paragraphs:
                 if not paragraph.text.strip():
@@ -847,7 +821,7 @@ class ImageFormatter(BaseFormatter):
                             original_text = run.text
                             modified_text = original_text
                             
-                            # 移除包含图片文件名模式的部分
+                            # 移除包含图片文件名模式的部分，但保护数学公式
                             for pattern in image_filename_patterns:
                                 if pattern in modified_text:
                                     # 如果是Pasted image模式，移除整个"Pasted image 日期时间"格式
@@ -855,9 +829,17 @@ class ImageFormatter(BaseFormatter):
                                         import re
                                         modified_text = re.sub(r'Pasted image \d{14}', '', modified_text)
                                     else:
-                                        # 对于文件扩展名，移除包含该扩展名的词
+                                        # 对于文件扩展名，移除包含该扩展名的词，但保护数学公式
                                         words = modified_text.split()
-                                        filtered_words = [word for word in words if pattern not in word]
+                                        filtered_words = []
+                                        for word in words:
+                                            # 检查词是否包含数学公式，如果包含则保留
+                                            if (Patterns.LATEX_INLINE_MATH_PATTERN.search(word) or 
+                                                Patterns.LATEX_BLOCK_MATH_PATTERN.search(word)):
+                                                filtered_words.append(word)
+                                            elif pattern not in word:
+                                                filtered_words.append(word)
+                                            # 如果词既包含文件名模式又包含数学公式，优先保护数学公式
                                         modified_text = ' '.join(filtered_words)
                             
                             # 只在文本确实改变时更新
@@ -865,7 +847,7 @@ class ImageFormatter(BaseFormatter):
                                 run.text = modified_text.strip()
                                 
         except Exception as e:
-            print(f"警告：移除图片标题时出现错误: {e}")
+            pass  # 静默处理错误
     
     def _format_all_image_captions(self, doc: Document):
         """格式化所有图片标题段落（包括Pandoc生成的"Image Caption"样式）"""
@@ -882,11 +864,11 @@ class ImageFormatter(BaseFormatter):
                 
                 # 检查是否为"图 X："格式的标题
                 text = paragraph.text.strip()
-                if text and self.IMAGE_CAPTION_PATTERN.match(text):
+                if text and Patterns.IMAGE_CAPTION_PATTERN.match(text):
                     self._format_image_caption(paragraph)
                     
         except Exception as e:
-            print(f"警告：格式化图片标题时出现错误: {e}")
+            pass  # 静默处理错误
     
     def _remove_empty_paragraphs_after_image_cleanup(self, doc: Document):
         """移除因删除图片标题而产生的空白段落"""
@@ -910,7 +892,7 @@ class ImageFormatter(BaseFormatter):
                     parent.remove(paragraph_element)
                     
         except Exception as e:
-            print(f"警告：移除空白段落时出现错误: {e}")
+            pass  # 静默处理错误
     
     def _is_effectively_empty_paragraph(self, paragraph) -> bool:
         """检查段落是否实际为空（没有文本内容或只有空白）"""
@@ -985,10 +967,10 @@ class ImageFormatter(BaseFormatter):
                     parent.replace(inline, anchor)
                     
         except (AttributeError, KeyError) as e:
-            print(f"警告：设置图片环绕时出现结构错误: {e}")
+            pass  # 静默处理结构错误
             # 如果出错，保持原有的inline格式
         except Exception as e:
-            print(f"警告：设置图片环绕时出现错误: {e}")
+            pass  # 静默处理错误
             # 如果出错，保持原有的inline格式
     
     def _create_anchor_element(self, cx: str, cy: str, docPr_id: str, docPr_name: str):
@@ -1091,12 +1073,12 @@ class ImageFormatter(BaseFormatter):
             return anchor
             
         except XMLProcessingError as e:
-            print(f"警告：创建anchor元素时出现XML错误: {e}")
+            pass  # 静默处理XML错误
             # 返回简单的anchor元素作为后备
             fallback_anchor = OxmlElement('wp:anchor')
             return fallback_anchor
         except Exception as e:
-            print(f"警告：创建anchor元素时出错: {e}")
+            pass  # 静默处理错误
             # 返回简单的anchor元素作为后备
             fallback_anchor = OxmlElement('wp:anchor')
             return fallback_anchor
@@ -1119,7 +1101,7 @@ class ImageFormatter(BaseFormatter):
                     continue
                 
                 # 检查是否为图片标题段落（如"图 3：MOCVD工艺流程"）
-                if self.IMAGE_CAPTION_PATTERN.match(text):
+                if Patterns.IMAGE_CAPTION_PATTERN.match(text):
                     # 保留完整的图片标题，设置为caption格式
                     self._format_image_caption(paragraph)
             
@@ -1128,20 +1110,20 @@ class ImageFormatter(BaseFormatter):
                 self._remove_paragraph(paragraph)
                 
         except (AttributeError, IndexError) as e:
-            print(f"警告：移除图片标题时出现文档结构错误: {e}")
+            pass  # 静默处理文档结构错误
         except Exception as e:
-            print(f"警告：移除图片标题时出现错误: {e}")
+            pass  # 静默处理错误
     
     def _is_image_caption(self, text: str) -> bool:
         """判断是否为需要移除的图片文件名文本"""
         # 排除有意义的图片标题（包含"图 X："格式的）
-        if self.IMAGE_CAPTION_PATTERN.match(text):
+        if Patterns.IMAGE_CAPTION_PATTERN.match(text):
             return False
         
-        for pattern in self.IMAGE_FILENAME_PATTERNS:
+        for pattern in Patterns.IMAGE_FILENAME_PATTERNS:
             if pattern.search(text, re.IGNORECASE):
                 # 进一步检查是否包含中文描述
-                if self.CHINESE_CHAR_PATTERN.search(text) and len(text) > 20:
+                if Patterns.CHINESE_CHAR_PATTERN.search(text) and len(text) > 20:
                     # 包含中文且较长，可能是有意义的描述
                     return False
                 return True
@@ -1166,9 +1148,9 @@ class ImageFormatter(BaseFormatter):
             paragraph_format.first_line_indent = Pt(0)  # 图片标题不缩进
             
         except AttributeError as e:
-            print(f"警告：格式化图片标题时出现属性错误: {e}")
+            pass  # 静默处理属性错误
         except Exception as e:
-            print(f"警告：格式化图片标题时出现错误: {e}")
+            pass  # 静默处理错误
     
     def _remove_paragraph(self, paragraph):
         """安全地移除段落"""
@@ -1177,6 +1159,6 @@ class ImageFormatter(BaseFormatter):
             p.getparent().remove(p)
             paragraph._element = None
         except (AttributeError, ValueError) as e:
-            print(f"警告：移除段落时出现结构错误: {e}")
+            pass  # 静默处理结构错误
         except Exception as e:
-            print(f"警告：移除段落时出现错误: {e}")
+            pass  # 静默处理错误

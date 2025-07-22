@@ -59,14 +59,9 @@ def main():
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
     try:
-        print(f"正在预处理Markdown文件: {input_path}")
-        
         # 预处理Markdown文件
         preprocessor = MarkdownPreprocessor()
         preprocessed_data = preprocessor.preprocess_file(str(input_path))
-        
-        
-        print(f"正在使用Pandoc转换为Word文档: {output_path}")
         
         # 使用pandoc转换为Word文档
         pandoc_processor = PandocProcessor()
@@ -84,8 +79,6 @@ def main():
             title=None  # 不在pandoc阶段添加标题，后处理时添加
         )
         
-        print(f"正在应用公文格式...")
-        
         # 应用公文格式
         postprocessor = WordPostprocessor()
         postprocessor.apply_formatting(temp_output, preprocessed_data, preprocessed_data['content'])
@@ -93,7 +86,7 @@ def main():
         # 格式化表格（如果有）
         postprocessor.format_tables()
         
-        print(f"转换完成！输出文件: {output_path}")
+        print(f"✅ 转换完成：{output_path}")
         
     except FileProcessingError as e:
         print(f"文件处理错误: {e}", file=sys.stderr)
