@@ -1,6 +1,9 @@
 from docx import Document
 from docx.shared import Pt, Mm, RGBColor
 from docx.oxml.shared import OxmlElement, qn
+from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.oxml.ns import nsdecls
+from docx.oxml.parser import parse_xml
 from typing import Dict, Any
 import re
 
@@ -291,10 +294,78 @@ class WordPostprocessor:
         rFonts.set(qn('w:hint'), 'eastAsia')
     
     def format_tables(self):
-        """格式化表格"""
+        """格式化表格，包含完整的自动适应功能"""
         for table in self.doc.tables:
+            # 启用表格自动适应
+            if self.config.TABLE_CONFIG['auto_fit']:
+                table.autofit = True
+                
+                # 设置表格对齐方式为居中
+                table.alignment = WD_TABLE_ALIGNMENT.CENTER
+                
+                # 通过XML设置表格自动适应窗口
+                tbl = table._tbl
+                tblPr = tbl.tblPr
+                
+                # 设置表格宽度为100%
+                if self.config.TABLE_CONFIG['auto_fit_mode'] == 'window':
+                    tblW = tblPr.xpath('.//w:tblW')[0] if tblPr.xpath('.//w:tblW') else None
+                    if tblW is None:
+                        tblW = parse_xml(f'<w:tblW {nsdecls("w")} w:w="5000" w:type="pct"/>')
+                        tblPr.append(tblW)
+                    else:
+                        tblW.set(qn('w:w'), str(self.config.TABLE_CONFIG['preferred_width_percent'] * 50))
+                        tblW.set(qn('w:type'), 'pct')
+                
+                # 设置表格布局为自动
+                tblLayout = tblPr.xpath('.//w:tblLayout')[0] if tblPr.xpath('.//w:tblLayout') else None
+                if tblLayout is None:
+                    tblLayout = parse_xml(f'<w:tblLayout {nsdecls("w")} w:type="autofit"/>')
+                    tblPr.append(tblLayout)
+                else:
+                    tblLayout.set(qn('w:type'), 'autofit')
+                
+                # 设置表格允许跨页断行
+                if self.config.TABLE_CONFIG['allow_row_breaks']:
+                    tblPrEx = tbl.xpath('.//w:tblPrEx')[0] if tbl.xpath('.//w:tblPrEx') else None
+                    if tblPrEx is None:
+                        tblPrEx = parse_xml(f'<w:tblPrEx {nsdecls("w")}><w:tblLayout w:type="autofit"/></w:tblPrEx>')
+                        tbl.append(tblPrEx)
+            
+            # 格式化表格内容
             for row in table.rows:
+                # 设置行高规则
+                if hasattr(row, '_tr'):
+                    trPr = row._tr.xpath('.//w:trPr')[0] if row._tr.xpath('.//w:trPr') else None
+                    if trPr is None:
+                        trPr = parse_xml(f'<w:trPr {nsdecls("w")}></w:trPr>')
+                        row._tr.insert(0, trPr)
+                    
+                    # 设置行高规则为自动
+                    if self.config.TABLE_CONFIG['row_height_rule'] == 'auto':
+                        trHeight = trPr.xpath('.//w:trHeight')[0] if trPr.xpath('.//w:trHeight') else None
+                        if trHeight is None:
+                            trHeight = parse_xml(f'<w:trHeight {nsdecls("w")} w:hRule="auto"/>')
+                            trPr.append(trHeight)
+                        else:
+                            trHeight.set(qn('w:hRule'), 'auto')
+                
                 for cell in row.cells:
+                    # 设置单元格垂直对齐为居中
+                    tc = cell._tc
+                    tcPr = tc.xpath('.//w:tcPr')[0] if tc.xpath('.//w:tcPr') else None
+                    if tcPr is None:
+                        tcPr = parse_xml(f'<w:tcPr {nsdecls("w")}></w:tcPr>')
+                        tc.insert(0, tcPr)
+                    
+                    vAlign = tcPr.xpath('.//w:vAlign')[0] if tcPr.xpath('.//w:vAlign') else None
+                    if vAlign is None:
+                        vAlign = parse_xml(f'<w:vAlign {nsdecls("w")} w:val="center"/>')
+                        tcPr.append(vAlign)
+                    else:
+                        vAlign.set(qn('w:val'), 'center')
+                    
+                    # 格式化单元格内的段落
                     for paragraph in cell.paragraphs:
                         for run in paragraph.runs:
                             run.font.name = self.config.FONTS['fangsong']
@@ -302,9 +373,11 @@ class WordPostprocessor:
                             self._set_chinese_font(run, self.config.FONTS['fangsong'])
                         
                         # 设置单元格段落格式
-                        paragraph.alignment = self.config.ALIGNMENTS['justify']
+                        paragraph.alignment = self.config.ALIGNMENTS['center']  # 表格内容居中
                         paragraph_format = paragraph.paragraph_format
                         paragraph_format.line_spacing = self.config.LINE_SPACING
+                        paragraph_format.space_before = Pt(3)
+                        paragraph_format.space_after = Pt(3)
     
     def format_lists(self):
         """格式化列表 - 保留Word列表格式，只调整缩进和字体"""

@@ -41,10 +41,10 @@ class DocumentConfig:
     
     # 列表缩进配置
     LIST_INDENT = {
-        'level1_left': Mm(6),       # 一级列表左缩进（文字位置）
-        'level1_first_line': -Mm(6), # 一级列表首行缩进（悬挂缩进，符号位置）
-        'level2_left': Mm(12),       # 二级列表左缩进（文字位置，比一级多6mm）
-        'level2_first_line': -Mm(6)  # 二级列表首行缩进（悬挂缩进，符号位置）
+        'level1_left': Mm(12),       # 一级列表文字左缩进：增大数值→符号和文字整体右移
+        'level1_first_line': -Mm(6), # 一级列表符号相对位置：减小数值→符号左移，增大符号与文字间距
+        'level2_left': Mm(18),       # 二级列表文字左缩进：增大数值→符号和文字整体右移
+        'level2_first_line': -Mm(6)  # 二级列表符号相对位置：减小数值→符号左移，增大符号与文字间距
     }
     
     # 对齐方式
@@ -53,6 +53,15 @@ class DocumentConfig:
         'justify': WD_PARAGRAPH_ALIGNMENT.JUSTIFY,
         'left': WD_PARAGRAPH_ALIGNMENT.LEFT,
         'right': WD_PARAGRAPH_ALIGNMENT.RIGHT
+    }
+    
+    # 表格自动适应配置
+    TABLE_CONFIG = {
+        'auto_fit': True,              # 启用表格自动适应
+        'auto_fit_mode': 'window',     # 适应模式：'window'(窗口)/'contents'(内容)
+        'preferred_width_percent': 100, # 首选宽度百分比
+        'allow_row_breaks': True,      # 允许跨页断行
+        'row_height_rule': 'auto'      # 行高规则：'auto'/'exact'/'at_least'
     }
     
     # Pandoc相关配置
