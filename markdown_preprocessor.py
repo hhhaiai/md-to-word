@@ -63,8 +63,7 @@ class MarkdownPreprocessor:
         lines = self._convert_ordered_lists_to_paragraphs(lines)
         lines = self._fix_unordered_list_asterisks(lines)
         lines = self._process_math_formulas(lines)
-        if file_path:
-            lines = self._process_images(lines, os.path.dirname(file_path))
+        # 不处理图片，保留原始语法
         lines = self._merge_broken_lines(lines)
         lines = self._skip_first_level_headers(lines)
         
@@ -154,65 +153,10 @@ class MarkdownPreprocessor:
         return processed_lines
     
     def _process_math_formulas(self, lines: List[str]) -> List[str]:
-        """处理数学公式 - 保持LaTeX格式让pandoc处理"""
-        # 现在我们让pandoc处理数学公式，所以保持原始格式
-        # 但我们仍然可以做一些清理工作
-        processed_lines = []
-        
-        for line in lines:
-            # 保持原始的LaTeX数学公式格式
-            # pandoc会正确处理$...$和$$...$$格式
-            processed_lines.append(line)
-        
-        return processed_lines
+        """处理数学公式 - 保持LaTeX格式交给pandoc处理"""
+        # 保持原始LaTeX格式，由pandoc负责MathML转换
+        return lines
     
-    def _process_images(self, lines: List[str], source_dir: str) -> List[str]:
-        """处理图片链接，将相对路径转换为绝对路径或复制图片"""
-        processed_lines = []
-        
-        for line in lines:
-            # 使用预编译的正则表达式模式
-            
-            def replace_markdown_image(match):
-                alt_text = match.group(1)
-                image_path = match.group(2)
-                
-                # 如果已经是绝对路径或URL，不处理
-                if os.path.isabs(image_path) or image_path.startswith(('http://', 'https://')):
-                    return match.group(0)
-                
-                # 尝试找到图片的实际路径
-                actual_path = self._find_image_path(image_path, source_dir)
-                
-                if actual_path:
-                    # 返回绝对路径格式的图片引用
-                    return f'![{alt_text}]({actual_path})'
-                else:
-                    # 如果找不到图片，保持原始引用
-                    print(f"警告：找不到图片 {image_path}")
-                    return match.group(0)
-            
-            def replace_obsidian_image(match):
-                image_path = match.group(1)
-                
-                # 尝试找到图片的实际路径
-                actual_path = self._find_image_path(image_path, source_dir)
-                
-                if actual_path:
-                    # 转换为标准Markdown格式，使用文件名作为alt text
-                    filename = os.path.splitext(os.path.basename(image_path))[0]
-                    return f'![{filename}]({actual_path})'
-                else:
-                    # 如果找不到图片，保持原始引用
-                    print(f"警告：找不到图片 {image_path}")
-                    return match.group(0)
-            
-            # 先处理Obsidian格式，再处理标准Markdown格式
-            processed_line = self.OBSIDIAN_IMAGE_PATTERN.sub(replace_obsidian_image, line)
-            processed_line = self.MARKDOWN_IMAGE_PATTERN.sub(replace_markdown_image, processed_line)
-            processed_lines.append(processed_line)
-        
-        return processed_lines
     
     def _find_image_path(self, image_name: str, source_dir: str) -> str:
         """在配置的搜索路径中查找图片"""
@@ -316,10 +260,15 @@ class MarkdownPreprocessor:
         if current_index + 1 >= len(lines):
             return False
             
+        current_line = lines[current_index].strip()
         next_line = lines[current_index + 1].strip()
         
         # 下一行为空则不合并
         if not next_line:
+            return False
+        
+        # 如果当前行是数学公式相关，不合并
+        if self._is_math_formula_line(current_line):
             return False
             
         # 检查下一行是否为不应合并的特殊格式
@@ -334,6 +283,9 @@ class MarkdownPreprocessor:
     
     def _is_special_format_line(self, line: str) -> bool:
         """检查是否为特殊格式的行（标题、附件、表格、列表等）"""
+        # 图表caption识别模式
+        caption_pattern = re.compile(r'^[图表](?:片|格|表)?\s*\d+\s*[.:：]\s*')
+        
         # 检查各种不应合并的格式
         special_checks = [
             line.startswith('#'),              # 标题
@@ -342,11 +294,22 @@ class MarkdownPreprocessor:
             line.startswith('|'),              # 表格行
             line.startswith('-'),              # 列表项
             line.startswith('*'),              # 列表项
+            line == '$$',                      # 数学公式块分隔符
+            line.startswith('$$'),             # 数学公式开始/结束行
+            line.endswith('$$'),               # 数学公式开始/结束行
+            caption_pattern.match(line),       # 图表caption
             self.ORDERED_LIST_PATTERN.match(line),     # 有序列表
             self.INDENTED_LIST_PATTERN.match(line),    # 带缩进的列表项
         ]
         
         return any(special_checks)
+    
+    def _is_math_formula_line(self, line: str) -> bool:
+        """检查是否为数学公式相关的行"""
+        return (line == '$$' or 
+                line.startswith('$$') or 
+                line.endswith('$$') or
+                ('$' in line and line.count('$') % 2 == 0))  # 行内公式
     
     def _skip_first_level_headers(self, lines: List[str]) -> List[str]:
         """跳过一级标题（#），因为我们使用文件名作为文档标题"""

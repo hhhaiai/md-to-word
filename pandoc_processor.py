@@ -50,13 +50,14 @@ class PandocProcessor:
             if extra_args:
                 pandoc_args.extend(extra_args)
             
-            # 使用pypandoc进行转换
-            pypandoc.convert_file(
-                temp_md_path,
-                'docx',
-                outputfile=output_path,
-                extra_args=pandoc_args
-            )
+            # 使用subprocess直接调用pandoc（确保数学公式正确处理）
+            import subprocess
+            
+            cmd = ['pandoc', temp_md_path, '-t', 'docx', '-o', output_path] + pandoc_args
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise PandocError(f"Pandoc命令执行失败: {result.stderr}")
             
             return output_path
             
@@ -74,7 +75,7 @@ class PandocProcessor:
         """获取pandoc转换参数"""
         args = [
             # 数学公式支持
-            f'--{self.pandoc_config["math_method"]}',  # 使用配置的数学公式渲染方法
+            f'--{self.pandoc_config["math_method"]}',
             # 保持原始格式的某些方面
             '--preserve-tabs',
             # 处理换行

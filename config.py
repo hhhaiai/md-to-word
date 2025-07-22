@@ -17,9 +17,9 @@ class DocumentConfig:
     # 字体配置
     FONTS = {
         'fangsong': 'FangSong',      # 正文字体
-        'xiaobiaosong': '小标宋体',      # 标题字体
-        'heiti': '黑体',               # 一级标题
-        'kaiti': 'Kaiti TC'            # 二级标题
+        'xiaobiaosong': 'FZXiaoBiaoSong-B05S',      # 标题字体
+        'heiti': 'SimHei',               # 一级标题
+        'kaiti': 'Kaiti SC'            # 二级标题
     }
     
     # 字号配置 (单位: 磅)
@@ -32,7 +32,7 @@ class DocumentConfig:
     }
     
     # 行距配置
-    LINE_SPACING = Pt(25.5)     # 固定值25.5磅
+    LINE_SPACING = Pt(26.5)     # 固定值25.5磅
     
     # 版心配置
     CHARS_PER_LINE = 28         # 每行字符数

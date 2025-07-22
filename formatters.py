@@ -147,6 +147,13 @@ class ParagraphFormatter(BaseFormatter):
         text = paragraph.text.strip()
         level = self._get_heading_level(paragraph, text)
         
+        # 检查是否包含数学公式（通过检查XML元素）
+        if self._has_math_formula(paragraph):
+            # 如果包含数学公式，只修改字体格式，不清除内容
+            self._format_paragraph_with_math(paragraph, level, is_heading=True)
+            return
+        
+        # 对于不包含数学公式的标题，使用原有的方法
         # 清除现有格式
         for run in paragraph.runs:
             run.clear()
@@ -218,6 +225,12 @@ class ParagraphFormatter(BaseFormatter):
     
     def _format_body_paragraph(self, paragraph):
         """格式化正文段落"""
+        # 检查是否包含数学公式
+        if self._has_math_formula(paragraph):
+            # 如果包含数学公式，使用特殊的格式化方法
+            self._format_paragraph_with_math(paragraph, level=0, is_heading=False)
+            return
+        
         # 为所有运行应用仿宋格式
         for run in paragraph.runs:
             run.font.name = self.config.FONTS['fangsong']
@@ -231,6 +244,61 @@ class ParagraphFormatter(BaseFormatter):
         paragraph_format.line_spacing = self.config.LINE_SPACING
         paragraph_format.space_after = Pt(0)
         paragraph_format.space_before = Pt(0)
+    
+    def _has_math_formula(self, paragraph) -> bool:
+        """检查段落是否包含数学公式"""
+        try:
+            # 检查段落的XML内容是否包含MathML元素
+            xml_str = paragraph._element.xml
+            return 'oMath' in xml_str or 'oMathPara' in xml_str
+        except:
+            return False
+    
+    def _format_paragraph_with_math(self, paragraph, level: int, is_heading: bool):
+        """格式化包含数学公式的段落，保留数学公式内容"""
+        # 设置段落格式
+        paragraph.alignment = self.config.ALIGNMENTS['justify']
+        paragraph_format = paragraph.paragraph_format
+        
+        if is_heading:
+            paragraph_format.first_line_indent = self.config.FIRST_LINE_INDENT
+            paragraph_format.space_after = Pt(6)
+            paragraph_format.space_before = Pt(6)
+        else:
+            paragraph_format.first_line_indent = self.config.FIRST_LINE_INDENT
+            paragraph_format.space_after = Pt(0)
+            paragraph_format.space_before = Pt(0)
+        
+        paragraph_format.line_spacing = self.config.LINE_SPACING
+        
+        # 只格式化文本run，跳过数学公式
+        for run in paragraph.runs:
+            if run._element.tag.endswith('r'):  # 普通文本run
+                try:
+                    # 检查run的XML内容，只处理不包含数学内容的run
+                    if 'oMath' not in run._element.xml:
+                        if is_heading:
+                            # 根据标题级别设置字体
+                            if level == 1:
+                                run.font.name = self.config.FONTS['heiti']
+                                self._set_chinese_font(run, self.config.FONTS['heiti'])
+                            elif level == 2:
+                                run.font.name = self.config.FONTS['kaiti']
+                                self._set_chinese_font(run, self.config.FONTS['kaiti'])
+                            else:
+                                run.font.name = self.config.FONTS['fangsong']
+                                self._set_chinese_font(run, self.config.FONTS['fangsong'])
+                            run.font.size = self.config.FONT_SIZES['body']
+                            run.bold = False
+                            run.font.color.rgb = RGBColor(0, 0, 0)
+                        else:
+                            # 正文段落格式
+                            run.font.name = self.config.FONTS['fangsong']
+                            run.font.size = self.config.FONT_SIZES['body']
+                            self._set_chinese_font(run, self.config.FONTS['fangsong'])
+                except:
+                    # 如果出错，跳过这个run
+                    continue
 
 
 class DocumentTitleFormatter(BaseFormatter):
@@ -320,8 +388,11 @@ class TableFormatter(BaseFormatter):
                         tblPrEx = parse_xml(f'<w:tblPrEx {nsdecls("w")}><w:tblLayout w:type="autofit"/></w:tblPrEx>')
                         tbl.append(tblPrEx)
             
+            # 应用三线表样式
+            self._apply_three_line_table_style(table)
+            
             # 格式化表格内容
-            for row in table.rows:
+            for row_index, row in enumerate(table.rows):
                 # 使用优化的行属性处理
                 row_props = self.xml_processor.process_row_properties(row)
                 if row_props:
@@ -351,6 +422,9 @@ class TableFormatter(BaseFormatter):
                     else:
                         vAlign.set(qn('w:val'), 'center')
                     
+                    # 应用三线表单元格边框
+                    self._apply_three_line_cell_borders(cell, row_index, len(table.rows))
+                    
                     # 格式化单元格内的段落
                     for paragraph in cell.paragraphs:
                         for run in paragraph.runs:
@@ -364,6 +438,72 @@ class TableFormatter(BaseFormatter):
                         paragraph_format.line_spacing = self.config.LINE_SPACING
                         paragraph_format.space_before = Pt(3)
                         paragraph_format.space_after = Pt(3)
+    
+    def _apply_three_line_table_style(self, table):
+        """应用三线表样式 - 清除默认边框"""
+        tbl = table._tbl
+        tblPr = tbl.tblPr
+        
+        # 移除表格默认边框
+        tblBorders = tblPr.find(qn('w:tblBorders'))
+        if tblBorders is not None:
+            tblPr.remove(tblBorders)
+        
+        # 设置表格无边框样式
+        no_border_xml = f'''<w:tblBorders {nsdecls("w")}>
+            <w:top w:val="none" w:sz="0"/>
+            <w:left w:val="none" w:sz="0"/>
+            <w:bottom w:val="none" w:sz="0"/>
+            <w:right w:val="none" w:sz="0"/>
+            <w:insideH w:val="none" w:sz="0"/>
+            <w:insideV w:val="none" w:sz="0"/>
+        </w:tblBorders>'''
+        
+        new_borders = parse_xml(no_border_xml)
+        tblPr.append(new_borders)
+    
+    def _apply_three_line_cell_borders(self, cell, row_index, total_rows):
+        """为单元格应用三线表边框样式"""
+        tc = cell._tc
+        tcPr = tc.tcPr
+        
+        if tcPr is None:
+            tcPr = parse_xml(f'<w:tcPr {nsdecls("w")}></w:tcPr>')
+            tc.insert(0, tcPr)
+        
+        # 移除现有边框设置
+        existing_borders = tcPr.find(qn('w:tcBorders'))
+        if existing_borders is not None:
+            tcPr.remove(existing_borders)
+        
+        # 根据行位置设置边框
+        if row_index == 0:
+            # 第一行（表头）：顶部1.5磅黑色边框 + 底部0.75磅边框
+            borders_xml = f'''<w:tcBorders {nsdecls("w")}>
+                <w:top w:val="single" w:sz="21" w:color="000000"/>
+                <w:bottom w:val="single" w:sz="9" w:color="000000"/>
+                <w:left w:val="none" w:sz="0"/>
+                <w:right w:val="none" w:sz="0"/>
+            </w:tcBorders>'''
+        elif row_index == total_rows - 1:
+            # 最后一行：底部1.5磅黑色边框
+            borders_xml = f'''<w:tcBorders {nsdecls("w")}>
+                <w:top w:val="none" w:sz="0"/>
+                <w:bottom w:val="single" w:sz="21" w:color="000000"/>
+                <w:left w:val="none" w:sz="0"/>
+                <w:right w:val="none" w:sz="0"/>
+            </w:tcBorders>'''
+        else:
+            # 中间行：无边框
+            borders_xml = f'''<w:tcBorders {nsdecls("w")}>
+                <w:top w:val="none" w:sz="0"/>
+                <w:bottom w:val="none" w:sz="0"/>
+                <w:left w:val="none" w:sz="0"/>
+                <w:right w:val="none" w:sz="0"/>
+            </w:tcBorders>'''
+        
+        new_borders = parse_xml(borders_xml)
+        tcPr.append(new_borders)
 
 
 class ListFormatter(BaseFormatter):
@@ -570,6 +710,15 @@ class ImageFormatter(BaseFormatter):
     def __init__(self, config: DocumentConfig = None):
         super().__init__(config)
         self.xml_processor = OptimizedXMLProcessor()
+        
+    def _has_math_formula(self, paragraph) -> bool:
+        """检查段落是否包含数学公式"""
+        try:
+            # 检查段落的XML内容是否包含MathML元素
+            xml_str = paragraph._element.xml
+            return 'oMath' in xml_str or 'oMathPara' in xml_str
+        except:
+            return False
     
     def format_images(self, doc: Document):
         """格式化文档中的图片 - 使用优化的单次遍历，并移除所有图片相关文件名"""
@@ -585,7 +734,10 @@ class ImageFormatter(BaseFormatter):
             # 2. 扫描所有段落，查找并移除图片文件名文本（即使没有绘制元素）
             self._remove_image_captions_from_all_paragraphs(doc)
             
-            # 3. 移除因删除图片标题而产生的空白段落
+            # 3. 格式化图片标题段落（处理"Image Caption"样式和"图 X："格式）
+            self._format_all_image_captions(doc)
+            
+            # 4. 移除因删除图片标题而产生的空白段落
             self._remove_empty_paragraphs_after_image_cleanup(doc)
                     
         except (AttributeError, KeyError) as e:
@@ -679,6 +831,10 @@ class ImageFormatter(BaseFormatter):
                 if not paragraph.text.strip():
                     continue
                 
+                # 检查段落是否包含数学公式，如果包含则跳过
+                if self._has_math_formula(paragraph):
+                    continue
+                
                 # 检查段落文本是否包含图片文件名模式
                 text_contains_image_pattern = any(
                     pattern in paragraph.text for pattern in image_filename_patterns
@@ -711,6 +867,27 @@ class ImageFormatter(BaseFormatter):
         except Exception as e:
             print(f"警告：移除图片标题时出现错误: {e}")
     
+    def _format_all_image_captions(self, doc: Document):
+        """格式化所有图片标题段落（包括Pandoc生成的"Image Caption"样式）"""
+        try:
+            for paragraph in doc.paragraphs:
+                # 跳过包含数学公式的段落
+                if self._has_math_formula(paragraph):
+                    continue
+                
+                # 检查是否为Pandoc生成的图片标题样式
+                if paragraph.style.name == 'Image Caption':
+                    self._format_image_caption(paragraph)
+                    continue
+                
+                # 检查是否为"图 X："格式的标题
+                text = paragraph.text.strip()
+                if text and self.IMAGE_CAPTION_PATTERN.match(text):
+                    self._format_image_caption(paragraph)
+                    
+        except Exception as e:
+            print(f"警告：格式化图片标题时出现错误: {e}")
+    
     def _remove_empty_paragraphs_after_image_cleanup(self, doc: Document):
         """移除因删除图片标题而产生的空白段落"""
         try:
@@ -740,6 +917,10 @@ class ImageFormatter(BaseFormatter):
         try:
             # 检查段落文本
             if paragraph.text.strip():
+                return False
+            
+            # 检查是否包含数学公式 - 非常重要！
+            if self._has_math_formula(paragraph):
                 return False
             
             # 检查是否包含非文本内容（如图片、表格等）
@@ -926,6 +1107,10 @@ class ImageFormatter(BaseFormatter):
             paragraphs_to_remove = []
             
             for paragraph in doc.paragraphs:
+                # 检查段落是否包含数学公式，如果包含则跳过
+                if self._has_math_formula(paragraph):
+                    continue
+                    
                 text = paragraph.text.strip()
                 
                 # 检查是否为图片标题段落
