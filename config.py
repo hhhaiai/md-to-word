@@ -88,5 +88,32 @@ class DocumentConfig:
             '--preserve-tabs',
             '--wrap=none',
             '--reference-links'
-        ]
+        ],
+        
+        # 图片文字环绕设置
+        'image_wrap_text': True,  # 是否启用图片文字环绕
+        'image_wrap_type': 'topAndBottom'  # 环绕类型：topAndBottom, square, tight, through, none
+    }
+    
+    # 图片路径配置
+    IMAGE_CONFIG = {
+        # Obsidian附件默认路径
+        'obsidian_attachments_path': '/Users/yishentu/Library/Mobile Documents/iCloud~md~obsidian/Documents/YT\'s Obsidian/- Attachments',
+        
+        # 图片搜索路径列表（按优先级排序）
+        'search_paths': [
+            '/Users/yishentu/Library/Mobile Documents/iCloud~md~obsidian/Documents/YT\'s Obsidian/- Attachments',
+            './images',
+            './assets',
+            './'
+        ],
+        
+        # 支持的图片格式
+        'supported_formats': ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp'],
+        
+        # 是否复制图片到输出目录
+        'copy_images': True,
+        
+        # 图片输出目录（相对于Word文档）
+        'output_dir': 'images'
     }

@@ -58,6 +58,12 @@ class WordPostprocessor:
         # 格式化表格
         self.format_tables()
         
+        # 格式化图片
+        self.format_images()
+        
+        # 移除图片标题段落
+        self._remove_image_captions()
+        
         # 保存格式化后的文档
         self.doc.save(docx_path)
         return docx_path
@@ -490,3 +496,225 @@ class WordPostprocessor:
                         run.font.name = self.config.FONTS['fangsong']
                         run.font.size = self.config.FONT_SIZES['body']
                         self._set_chinese_font(run, self.config.FONTS['fangsong'])
+    
+    def format_images(self):
+        """格式化文档中的图片"""
+        try:
+            # 遍历文档中的所有段落，查找包含图片的段落
+            for paragraph in self.doc.paragraphs:
+                # 检查段落中是否包含inline shapes（图片）
+                if hasattr(paragraph, '_element'):
+                    # 查找段落中的图片元素
+                    drawings = paragraph._element.xpath('.//w:drawing')
+                    for drawing in drawings:
+                        self._format_single_image(drawing)
+        except Exception as e:
+            print(f"图片格式化时出现错误: {e}")
+    
+    def _format_single_image(self, drawing_element):
+        """格式化单个图片"""
+        try:
+            # 移除图片文件名
+            self._remove_image_name(drawing_element)
+            
+            # 设置文字环绕（如果启用）
+            if self.config.PANDOC_CONFIG.get('image_wrap_text', False):
+                self._set_image_wrap(drawing_element)
+                
+        except Exception as e:
+            print(f"格式化单个图片时出现错误: {e}")
+    
+    def _remove_image_name(self, drawing_element):
+        """移除图片的文件名显示"""
+        try:
+            # 查找所有可能包含图片名称的元素
+            
+            # 1. wp:docPr元素（Word图片文档属性）
+            docPr_elements = drawing_element.xpath('.//wp:docPr')
+            for docPr in docPr_elements:
+                if docPr.get('title'):
+                    docPr.set('title', '')  # 清空标题
+                if docPr.get('descr'):
+                    docPr.set('descr', '')  # 清空描述
+                if docPr.get('name'):
+                    docPr.set('name', '')  # 完全清空名称
+            
+            # 2. pic:cNvPr元素（图片核心非可视属性）
+            cNvPr_elements = drawing_element.xpath('.//pic:cNvPr')
+            for cNvPr in cNvPr_elements:
+                if cNvPr.get('name'):
+                    cNvPr.set('name', '')  # 完全清空名称
+                if cNvPr.get('descr'):
+                    cNvPr.set('descr', '')  # 清空描述
+                if cNvPr.get('title'):
+                    cNvPr.set('title', '')  # 清空标题
+            
+            # 3. a:blip元素（图片链接）
+            blip_elements = drawing_element.xpath('.//a:blip')
+            for blip in blip_elements:
+                if blip.get('title'):
+                    blip.set('title', '')
+                if blip.get('cstate'):
+                    blip.set('cstate', '')
+            
+            # 4. 查找并移除图片标题段落（在图片后面的文字）
+            parent_paragraph = drawing_element.getparent()
+            while parent_paragraph is not None and parent_paragraph.tag != qn('w:p'):
+                parent_paragraph = parent_paragraph.getparent()
+            
+            if parent_paragraph is not None:
+                # 检查图片后是否有文本内容是文件名
+                for run in parent_paragraph.xpath('.//w:r'):
+                    text_elements = run.xpath('.//w:t')
+                    for text_elem in text_elements:
+                        if text_elem.text and ('Pasted image' in text_elem.text or 
+                                             '006Fd7o3gy1' in text_elem.text or
+                                             '.png' in text_elem.text or
+                                             '.jpg' in text_elem.text):
+                            text_elem.text = ''  # 清空图片文件名文本
+                    
+        except Exception as e:
+            print(f"移除图片名称时出现错误: {e}")
+    
+    def _set_image_wrap(self, drawing_element):
+        """设置图片文字环绕为top and bottom"""
+        try:
+            if not self.config.PANDOC_CONFIG.get('image_wrap_text', False):
+                return
+                
+            wrap_type = self.config.PANDOC_CONFIG.get('image_wrap_type', 'topAndBottom')
+            
+            # 查找inline元素（内联图片）- 使用更简单的xpath方法
+            inlines = drawing_element.xpath('.//wp:inline')
+            
+            for inline in inlines:
+                # 获取父元素
+                parent = inline.getparent()
+                
+                # 获取现有的图片尺寸
+                extent = inline.xpath('.//wp:extent')
+                cx = extent[0].get('cx') if extent else '3000000'
+                cy = extent[0].get('cy') if extent else '2000000'
+                
+                # 获取docPr信息
+                docPr = inline.xpath('.//wp:docPr')
+                docPr_id = docPr[0].get('id') if docPr else '1'
+                docPr_name = docPr[0].get('name') if docPr else 'Picture'
+                
+                # 获取graphic元素
+                graphic = inline.xpath('.//a:graphic')
+                
+                if graphic:
+                    # 创建anchor元素替换inline元素
+                    anchor_xml = f'''<wp:anchor {nsdecls("wp")} {nsdecls("a")}
+                        distT="0" distB="0" distL="114300" distR="114300" 
+                        simplePos="0" relativeHeight="251658240" 
+                        behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">
+                        <wp:simplePos x="0" y="0"/>
+                        <wp:positionH relativeFrom="column">
+                            <wp:align>center</wp:align>
+                        </wp:positionH>
+                        <wp:positionV relativeFrom="paragraph">
+                            <wp:posOffset>0</wp:posOffset>
+                        </wp:positionV>
+                        <wp:extent cx="{cx}" cy="{cy}"/>
+                        <wp:effectExtent l="0" t="0" r="0" b="0"/>
+                        <wp:wrapTopAndBottom/>
+                        <wp:docPr id="{docPr_id}" name="{docPr_name}"/>
+                        <wp:cNvGraphicFramePr>
+                            <a:graphicFrameLocks noChangeAspect="1"/>
+                        </wp:cNvGraphicFramePr>
+                    </wp:anchor>'''
+                    
+                    anchor = parse_xml(anchor_xml)
+                    
+                    # 复制graphic元素到新的anchor中
+                    anchor.append(graphic[0])
+                    
+                    # 替换inline元素
+                    parent.replace(inline, anchor)
+                    
+        except Exception as e:
+            print(f"设置图片环绕时出现错误: {e}")
+            # 如果出错，保持原有的inline格式
+    
+    def _remove_image_captions(self):
+        """移除图片标题段落"""
+        try:
+            paragraphs_to_remove = []
+            
+            for i, paragraph in enumerate(self.doc.paragraphs):
+                text = paragraph.text.strip()
+                
+                # 检查是否为图片标题段落
+                if text and self._is_image_caption(text):
+                    paragraphs_to_remove.append(paragraph)
+                    continue
+                
+                # 检查是否为图片标题段落（如"图 3：MOCVD工艺流程"）
+                if re.match(r'^图\s*\d+\s*[:：]\s*', text):
+                    # 保留完整的图片标题，设置为caption格式
+                    self._format_image_caption(paragraph)
+            
+            # 移除标识为需要删除的段落
+            for paragraph in paragraphs_to_remove:
+                self._remove_paragraph(paragraph)
+                
+        except Exception as e:
+            print(f"移除图片标题时出现错误: {e}")
+    
+    def _is_image_caption(self, text: str) -> bool:
+        """判断是否为需要移除的图片文件名文本"""
+        # 只移除明显的文件名，不移除有意义的图片标题
+        file_name_patterns = [
+            r'Pasted image \d+',
+            r'^006Fd7o3gy1.*\.(png|jpg|jpeg|gif|bmp)$',  # 纯文件名
+            r'^Screenshot.*\.(png|jpg|jpeg|gif|bmp)$',   # 纯截图文件名
+            r'^.*\.(png|jpg|jpeg|gif|bmp)$',  # 纯文件名（不包含中文描述）
+        ]
+        
+        # 排除有意义的图片标题（包含"图 X："格式的）
+        if re.match(r'^图\s*\d+\s*[:：]', text):
+            return False
+        
+        for pattern in file_name_patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                # 进一步检查是否包含中文描述
+                if re.search(r'[\u4e00-\u9fff]', text) and len(text) > 20:
+                    # 包含中文且较长，可能是有意义的描述
+                    return False
+                return True
+        return False
+    
+    def _format_image_caption(self, paragraph):
+        """格式化图片标题为caption格式"""
+        try:
+            # 设置图片标题的格式
+            for run in paragraph.runs:
+                run.font.name = self.config.FONTS['fangsong']
+                run.font.size = self.config.FONT_SIZES['table']  # 使用4号字体
+                run.bold = False
+                self._set_chinese_font(run, self.config.FONTS['fangsong'])
+            
+            # 设置段落格式 - 图片标题居中显示
+            paragraph.alignment = self.config.ALIGNMENTS['center']
+            paragraph_format = paragraph.paragraph_format
+            paragraph_format.line_spacing = self.config.LINE_SPACING
+            paragraph_format.space_after = Pt(6)
+            paragraph_format.space_before = Pt(3)
+            paragraph_format.first_line_indent = Pt(0)  # 图片标题不缩进
+            
+            # 可选：设置为Word的Caption样式（如果需要）
+            # paragraph.style = 'Caption'  # 这需要确保Caption样式存在
+            
+        except Exception as e:
+            print(f"格式化图片标题时出现错误: {e}")
+    
+    def _remove_paragraph(self, paragraph):
+        """安全地移除段落"""
+        try:
+            p = paragraph._element
+            p.getparent().remove(p)
+            paragraph._element = None
+        except Exception as e:
+            print(f"移除段落时出现错误: {e}")

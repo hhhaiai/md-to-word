@@ -1,12 +1,14 @@
 import re
 import os
+import shutil
 from typing import List, Dict, Any
+from config import DocumentConfig
 
 class MarkdownPreprocessor:
     """Markdown预处理器，用于清理和过滤Markdown内容后交给pandoc处理"""
     
     def __init__(self):
-        pass
+        self.image_config = DocumentConfig.IMAGE_CONFIG
     
     def preprocess_file(self, file_path: str) -> Dict[str, Any]:
         """预处理Markdown文件，返回处理结果"""
@@ -18,7 +20,7 @@ class MarkdownPreprocessor:
         title_from_filename = os.path.splitext(filename)[0]
         
         # 预处理内容
-        processed_content = self.preprocess_content(content)
+        processed_content = self.preprocess_content(content, file_path)
         
         # 提取元数据
         metadata = self._extract_metadata(content)
@@ -29,7 +31,7 @@ class MarkdownPreprocessor:
             'attachments': metadata.get('attachments', [])
         }
     
-    def preprocess_content(self, content: str) -> str:
+    def preprocess_content(self, content: str, file_path: str = '') -> str:
         """预处理Markdown内容"""
         lines = content.split('\n')
         
@@ -37,9 +39,12 @@ class MarkdownPreprocessor:
         lines = self._filter_yaml_frontmatter(lines)
         lines = self._filter_ending_metadata(lines)
         lines = self._remove_bold_formatting(lines)
+        lines = self._remove_numbered_list_spaces(lines)
         lines = self._convert_ordered_lists_to_paragraphs(lines)
         lines = self._fix_unordered_list_asterisks(lines)
         lines = self._process_math_formulas(lines)
+        if file_path:
+            lines = self._process_images(lines, os.path.dirname(file_path))
         lines = self._merge_broken_lines(lines)
         lines = self._skip_first_level_headers(lines)
         
@@ -118,6 +123,17 @@ class MarkdownPreprocessor:
         
         return processed_lines
     
+    def _remove_numbered_list_spaces(self, lines: List[str]) -> List[str]:
+        """去除数字列表项中的空格，如将'1. '转换为'1.'"""
+        processed_lines = []
+        
+        for line in lines:
+            # 匹配数字后跟点和空格的模式，如 "1. ", "2. ", "10. " 等
+            processed_line = re.sub(r'^(\s*)(\d+)\.\s+', r'\1\2.', line)
+            processed_lines.append(processed_line)
+        
+        return processed_lines
+    
     def _process_math_formulas(self, lines: List[str]) -> List[str]:
         """处理数学公式 - 保持LaTeX格式让pandoc处理"""
         # 现在我们让pandoc处理数学公式，所以保持原始格式
@@ -130,6 +146,89 @@ class MarkdownPreprocessor:
             processed_lines.append(line)
         
         return processed_lines
+    
+    def _process_images(self, lines: List[str], source_dir: str) -> List[str]:
+        """处理图片链接，将相对路径转换为绝对路径或复制图片"""
+        processed_lines = []
+        
+        for line in lines:
+            # 处理标准Markdown图片语法: ![alt](path)
+            markdown_pattern = r'!\[([^\]]*)\]\(([^)]+)\)'
+            # 处理Obsidian图片语法: ![[path]]
+            obsidian_pattern = r'!\[\[([^\]]+)\]\]'
+            
+            def replace_markdown_image(match):
+                alt_text = match.group(1)
+                image_path = match.group(2)
+                
+                # 如果已经是绝对路径或URL，不处理
+                if os.path.isabs(image_path) or image_path.startswith(('http://', 'https://')):
+                    return match.group(0)
+                
+                # 尝试找到图片的实际路径
+                actual_path = self._find_image_path(image_path, source_dir)
+                
+                if actual_path:
+                    # 返回绝对路径格式的图片引用
+                    return f'![{alt_text}]({actual_path})'
+                else:
+                    # 如果找不到图片，保持原始引用
+                    print(f"警告：找不到图片 {image_path}")
+                    return match.group(0)
+            
+            def replace_obsidian_image(match):
+                image_path = match.group(1)
+                
+                # 尝试找到图片的实际路径
+                actual_path = self._find_image_path(image_path, source_dir)
+                
+                if actual_path:
+                    # 转换为标准Markdown格式，使用文件名作为alt text
+                    filename = os.path.splitext(os.path.basename(image_path))[0]
+                    return f'![{filename}]({actual_path})'
+                else:
+                    # 如果找不到图片，保持原始引用
+                    print(f"警告：找不到图片 {image_path}")
+                    return match.group(0)
+            
+            # 先处理Obsidian格式，再处理标准Markdown格式
+            processed_line = re.sub(obsidian_pattern, replace_obsidian_image, line)
+            processed_line = re.sub(markdown_pattern, replace_markdown_image, processed_line)
+            processed_lines.append(processed_line)
+        
+        return processed_lines
+    
+    def _find_image_path(self, image_name: str, source_dir: str) -> str:
+        """在配置的搜索路径中查找图片"""
+        
+        # 构建搜索路径列表
+        search_paths = [
+            # 首先在源文件目录查找
+            source_dir,
+            # 然后在配置的搜索路径中查找
+            *self.image_config['search_paths']
+        ]
+        
+        # 支持的图片格式
+        supported_formats = self.image_config['supported_formats']
+        
+        for search_path in search_paths:
+            if not os.path.exists(search_path):
+                continue
+                
+            # 直接匹配文件名
+            full_path = os.path.join(search_path, image_name)
+            if os.path.isfile(full_path):
+                return os.path.abspath(full_path)
+            
+            # 如果没有扩展名，尝试添加支持的格式
+            if not os.path.splitext(image_name)[1]:
+                for ext in supported_formats:
+                    full_path_with_ext = os.path.join(search_path, image_name + ext)
+                    if os.path.isfile(full_path_with_ext):
+                        return os.path.abspath(full_path_with_ext)
+        
+        return None
     
     def _merge_broken_lines(self, lines: List[str]) -> List[str]:
         """合并被意外分割的行，但保持列表缩进"""

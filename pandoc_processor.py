@@ -1,15 +1,19 @@
 import pypandoc
 import tempfile
 import os
+import shutil
 from pathlib import Path
 from typing import Dict, Any, Optional
 from docx import Document
+from config import DocumentConfig
 
 class PandocProcessor:
     """使用Pandoc进行Markdown到Word的转换处理器"""
     
     def __init__(self):
         self.temp_files = []  # 用于跟踪临时文件以便清理
+        self.image_config = DocumentConfig.IMAGE_CONFIG
+        self.pandoc_config = DocumentConfig.PANDOC_CONFIG
     
     def convert_markdown_to_docx(self, markdown_content: str, output_path: str, 
                                 title: str = None, extra_args: Optional[list] = None) -> str:
@@ -65,12 +69,17 @@ class PandocProcessor:
         """获取pandoc转换参数"""
         args = [
             # 数学公式支持
-            '--mathml',  # 使用MathML渲染数学公式
+            f'--{self.pandoc_config["math_method"]}',  # 使用配置的数学公式渲染方法
             # 保持原始格式的某些方面
             '--preserve-tabs',
             # 处理换行
             '--wrap=none',
         ]
+        
+        # 添加配置文件中的额外参数
+        if 'extra_args' in self.pandoc_config:
+            args.extend(self.pandoc_config['extra_args'])
+        
         # 先不使用lua filter，避免复杂性
         # filter_path = self._get_chinese_filter_path()
         # if filter_path:
