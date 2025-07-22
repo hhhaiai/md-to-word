@@ -2,10 +2,30 @@ import re
 import os
 import shutil
 from typing import List, Dict, Any
+from pathlib import Path
 from config import DocumentConfig
+from exceptions import FileProcessingError, MarkdownParsingError, PathSecurityError
 
 class MarkdownPreprocessor:
     """Markdown预处理器，用于清理和过滤Markdown内容后交给pandoc处理"""
+    
+    # 预编译的正则表达式模式，提高性能
+    BOLD_PATTERN = re.compile(r'\*\*(.*?)\*\*')
+    BOLD_UNDERSCORE_PATTERN = re.compile(r'__(.*?)__')
+    NUMBERED_LIST_PATTERN = re.compile(r'^(\s*)(\d+)\.\s+')
+    ORDERED_LIST_PATTERN = re.compile(r'^\d+\.\s+')
+    MARKDOWN_IMAGE_PATTERN = re.compile(r'!\[([^\]]*)\]\(([^)]+)\)')
+    OBSIDIAN_IMAGE_PATTERN = re.compile(r'!\[\[([^\]]+)\]\]')
+    UNORDERED_LIST_PATTERN = re.compile(r'^\s*\*\s+')
+    UNORDERED_LIST_REPLACE_PATTERN = re.compile(r'^(\s*)\*\s+')
+    ORDERED_LIST_DOT_REPLACE_PATTERN = re.compile(r'^(\d+)\.\s+')
+    INDENTED_LIST_PATTERN = re.compile(r'^\s+[-*]')
+    HEADING_PATTERNS = [
+        re.compile(r'^[一二三四五六七八九十]+、'),
+        re.compile(r'^（[一二三四五六七八九十]+）'),
+        re.compile(r'^[0-9]+\.'),
+        re.compile(r'^[0-9]+、'),
+    ]
     
     def __init__(self):
         self.image_config = DocumentConfig.IMAGE_CONFIG
@@ -115,10 +135,9 @@ class MarkdownPreprocessor:
         processed_lines = []
         
         for line in lines:
-            # 去除 **加粗** 标记
-            processed_line = re.sub(r'\*\*(.*?)\*\*', r'\1', line)
-            # 去除 __加粗__ 标记（另一种Markdown加粗语法）
-            processed_line = re.sub(r'__(.*?)__', r'\1', processed_line)
+            # 使用预编译的正则表达式，提高性能
+            processed_line = self.BOLD_PATTERN.sub(r'\1', line)
+            processed_line = self.BOLD_UNDERSCORE_PATTERN.sub(r'\1', processed_line)
             processed_lines.append(processed_line)
         
         return processed_lines
@@ -128,8 +147,8 @@ class MarkdownPreprocessor:
         processed_lines = []
         
         for line in lines:
-            # 匹配数字后跟点和空格的模式，如 "1. ", "2. ", "10. " 等
-            processed_line = re.sub(r'^(\s*)(\d+)\.\s+', r'\1\2.', line)
+            # 使用预编译的正则表达式
+            processed_line = self.NUMBERED_LIST_PATTERN.sub(r'\1\2.', line)
             processed_lines.append(processed_line)
         
         return processed_lines
@@ -152,10 +171,7 @@ class MarkdownPreprocessor:
         processed_lines = []
         
         for line in lines:
-            # 处理标准Markdown图片语法: ![alt](path)
-            markdown_pattern = r'!\[([^\]]*)\]\(([^)]+)\)'
-            # 处理Obsidian图片语法: ![[path]]
-            obsidian_pattern = r'!\[\[([^\]]+)\]\]'
+            # 使用预编译的正则表达式模式
             
             def replace_markdown_image(match):
                 alt_text = match.group(1)
@@ -192,8 +208,8 @@ class MarkdownPreprocessor:
                     return match.group(0)
             
             # 先处理Obsidian格式，再处理标准Markdown格式
-            processed_line = re.sub(obsidian_pattern, replace_obsidian_image, line)
-            processed_line = re.sub(markdown_pattern, replace_markdown_image, processed_line)
+            processed_line = self.OBSIDIAN_IMAGE_PATTERN.sub(replace_obsidian_image, line)
+            processed_line = self.MARKDOWN_IMAGE_PATTERN.sub(replace_markdown_image, processed_line)
             processed_lines.append(processed_line)
         
         return processed_lines
@@ -205,30 +221,68 @@ class MarkdownPreprocessor:
         search_paths = [
             # 首先在源文件目录查找
             source_dir,
-            # 然后在配置的搜索路径中查找
-            *self.image_config['search_paths']
+            # 然后在配置的搜索路径中查找（动态获取）
+            *DocumentConfig.get_image_search_paths()
         ]
         
         # 支持的图片格式
         supported_formats = self.image_config['supported_formats']
         
-        for search_path in search_paths:
-            if not os.path.exists(search_path):
+        for search_path_str in search_paths:
+            search_path = Path(search_path_str).resolve()
+            if not search_path.exists() or not search_path.is_dir():
                 continue
-                
-            # 直接匹配文件名
-            full_path = os.path.join(search_path, image_name)
-            if os.path.isfile(full_path):
-                return os.path.abspath(full_path)
             
-            # 如果没有扩展名，尝试添加支持的格式
-            if not os.path.splitext(image_name)[1]:
-                for ext in supported_formats:
-                    full_path_with_ext = os.path.join(search_path, image_name + ext)
-                    if os.path.isfile(full_path_with_ext):
-                        return os.path.abspath(full_path_with_ext)
+            # 安全的路径构建和验证
+            try:
+                # 构建目标图片路径
+                image_path = (search_path / image_name).resolve()
+                
+                # 关键安全检查：确保解析后的路径在允许的搜索目录内
+                if not self._is_safe_path(image_path, search_path):
+                    print(f"警告：检测到潜在的路径遍历攻击，拒绝访问: {image_name}")
+                    continue
+                
+                # 直接匹配文件名
+                if image_path.is_file():
+                    return str(image_path)
+                
+                # 如果没有扩展名，尝试添加支持的格式
+                if not image_path.suffix:
+                    for ext in supported_formats:
+                        path_with_ext = image_path.with_suffix(ext)
+                        if path_with_ext.is_file() and self._is_safe_path(path_with_ext, search_path):
+                            return str(path_with_ext)
+                            
+            except (OSError, ValueError) as e:
+                # 处理无效路径或文件系统错误
+                print(f"警告：处理图片路径时出错 {image_name}: {e}")
+                continue
         
         return None
+    
+    def _is_safe_path(self, target_path: Path, base_path: Path) -> bool:
+        """
+        验证目标路径是否在基础路径范围内，防止路径遍历攻击
+        
+        Args:
+            target_path: 目标文件的绝对路径
+            base_path: 允许的基础目录路径
+            
+        Returns:
+            bool: 如果路径安全则返回True，否则返回False
+        """
+        try:
+            # 确保两个路径都是绝对路径
+            target_resolved = target_path.resolve()
+            base_resolved = base_path.resolve()
+            
+            # 检查目标路径是否在基础路径内（包括基础路径本身）
+            return base_resolved == target_resolved or base_resolved in target_resolved.parents
+            
+        except (OSError, ValueError):
+            # 如果路径解析失败，认为不安全
+            return False
     
     def _merge_broken_lines(self, lines: List[str]) -> List[str]:
         """合并被意外分割的行，但保持列表缩进"""
@@ -236,39 +290,63 @@ class MarkdownPreprocessor:
         i = 0
         
         while i < len(lines):
-            original_line = lines[i]  # 保持原始缩进
-            current_line_stripped = lines[i].strip()
+            current_line = lines[i]
             
-            # 如果当前行不为空
-            if current_line_stripped:
-                # 检查下一行是否是单词片段（通常被意外分割的行）
-                if (i + 1 < len(lines) and 
-                    lines[i + 1].strip() and
-                    not lines[i + 1].strip().startswith('#') and
-                    not lines[i + 1].strip().startswith('附件') and
-                    len(lines[i + 1].strip()) < 20 and  # 短行更可能是分割的部分
-                    not lines[i + 1].strip().endswith('：') and
-                    not lines[i + 1].strip().endswith(':') and
-                    not lines[i + 1].strip().startswith('|') and  # 不合并表格行
-                    not lines[i + 1].strip().startswith('-') and  # 不合并列表项
-                    not lines[i + 1].strip().startswith('*') and  # 不合并列表项
-                    not re.match(r'^\d+\.', lines[i + 1].strip()) and  # 不合并有序列表
-                    not re.match(r'^\s+[-*]', lines[i + 1])):  # 不合并带缩进的列表项
-                    
-                    # 合并当前行和下一行，保持原始行的缩进
-                    merged_line = original_line.rstrip() + lines[i + 1].strip()
-                    merged_lines.append(merged_line)
-                    i += 2  # 跳过下一行
-                else:
-                    # 保持原始缩进
-                    merged_lines.append(original_line)
-                    i += 1
-            else:
+            if not current_line.strip():
                 # 保持空行
-                merged_lines.append(original_line)
+                merged_lines.append(current_line)
+                i += 1
+                continue
+            
+            # 检查是否可以与下一行合并
+            if self._should_merge_with_next_line(lines, i):
+                # 合并当前行和下一行，保持原始行的缩进
+                merged_line = current_line.rstrip() + lines[i + 1].strip()
+                merged_lines.append(merged_line)
+                i += 2  # 跳过下一行
+            else:
+                # 保持原始缩进
+                merged_lines.append(current_line)
                 i += 1
         
         return merged_lines
+    
+    def _should_merge_with_next_line(self, lines: List[str], current_index: int) -> bool:
+        """判断当前行是否应该与下一行合并"""
+        if current_index + 1 >= len(lines):
+            return False
+            
+        next_line = lines[current_index + 1].strip()
+        
+        # 下一行为空则不合并
+        if not next_line:
+            return False
+            
+        # 检查下一行是否为不应合并的特殊格式
+        if self._is_special_format_line(next_line):
+            return False
+            
+        # 短行（少于20字符）更可能是被意外分割的部分
+        if len(next_line) >= 20:
+            return False
+            
+        return True
+    
+    def _is_special_format_line(self, line: str) -> bool:
+        """检查是否为特殊格式的行（标题、附件、表格、列表等）"""
+        # 检查各种不应合并的格式
+        special_checks = [
+            line.startswith('#'),              # 标题
+            line.startswith('附件'),            # 附件
+            line.endswith('：') or line.endswith(':'),  # 冒号结尾
+            line.startswith('|'),              # 表格行
+            line.startswith('-'),              # 列表项
+            line.startswith('*'),              # 列表项
+            self.ORDERED_LIST_PATTERN.match(line),     # 有序列表
+            self.INDENTED_LIST_PATTERN.match(line),    # 带缩进的列表项
+        ]
+        
+        return any(special_checks)
     
     def _skip_first_level_headers(self, lines: List[str]) -> List[str]:
         """跳过一级标题（#），因为我们使用文件名作为文档标题"""
@@ -293,17 +371,17 @@ class MarkdownPreprocessor:
             line_stripped = line.strip()
             
             # 检测有序列表项 (例: "1. **标题**")
-            if re.match(r'^\d+\.\s+', line_stripped):
+            if self.ORDERED_LIST_PATTERN.match(line_stripped):
                 # 保留原始缩进，但添加特殊处理防止pandoc识别为列表
                 # 在序号后添加全角空格，这样pandoc不会将其识别为列表
                 # 获取原始行的缩进
                 indent = len(line) - len(line.lstrip())
-                modified_line = ' ' * indent + re.sub(r'^(\d+)\.\s+', r'\1.　', line_stripped)
+                modified_line = ' ' * indent + self.ORDERED_LIST_DOT_REPLACE_PATTERN.sub(r'\1.　', line_stripped)
                 processed_lines.append(modified_line)
                 
                 # 检查后续行是否为列表项的续行内容
                 j = i + 1
-                while j < len(lines) and lines[j].strip() and not re.match(r'^\d+\.\s+', lines[j].strip()) and not lines[j].strip().startswith('#'):
+                while j < len(lines) and lines[j].strip() and not self.ORDERED_LIST_PATTERN.match(lines[j].strip()) and not lines[j].strip().startswith('#'):
                     # 这是列表项的续行内容，作为单独段落处理
                     continuation_line = lines[j].strip()
                     if continuation_line:  # 非空行
@@ -324,9 +402,9 @@ class MarkdownPreprocessor:
         
         for line in lines:
             # 检测无序列表项 (例: "* 项目内容")
-            if re.match(r'^\s*\*\s+', line):
+            if self.UNORDERED_LIST_PATTERN.match(line):
                 # 在星号前后加空格，确保pandoc正确识别为列表
-                processed_line = re.sub(r'^(\s*)\*\s+', r'\1- ', line)
+                processed_line = self.UNORDERED_LIST_REPLACE_PATTERN.sub(r'\1- ', line)
                 processed_lines.append(processed_line)
             else:
                 processed_lines.append(line)

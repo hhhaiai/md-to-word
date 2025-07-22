@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from docx import Document
 from config import DocumentConfig
+from exceptions import PandocError
 
 class PandocProcessor:
     """使用Pandoc进行Markdown到Word的转换处理器"""
@@ -59,8 +60,12 @@ class PandocProcessor:
             
             return output_path
             
+        except pypandoc.PandocError as e:
+            raise PandocError(f"Pandoc转换失败: {e}")
+        except OSError as e:
+            raise PandocError(f"文件操作失败: {e}")
         except Exception as e:
-            raise Exception(f"Pandoc转换失败: {e}")
+            raise PandocError(f"Pandoc处理时发生未知错误: {e}")
         finally:
             # 清理临时文件
             self._cleanup_temp_files()
@@ -80,19 +85,8 @@ class PandocProcessor:
         if 'extra_args' in self.pandoc_config:
             args.extend(self.pandoc_config['extra_args'])
         
-        # 先不使用lua filter，避免复杂性
-        # filter_path = self._get_chinese_filter_path()
-        # if filter_path:
-        #     args.append(f'--lua-filter={filter_path}')
         return args
     
-    def _get_chinese_filter_path(self) -> Optional[str]:
-        """获取中文处理Lua过滤器路径（如果存在）"""
-        current_dir = Path(__file__).parent
-        filter_path = current_dir / 'chinese_filter.lua'
-        if filter_path.exists():
-            return str(filter_path)
-        return None
     
     def _cleanup_temp_files(self):
         """清理临时文件"""
@@ -100,8 +94,8 @@ class PandocProcessor:
             try:
                 if os.path.exists(temp_file):
                     os.unlink(temp_file)
-            except Exception:
-                pass  # 忽略清理错误
+            except OSError:
+                pass  # 忽略清理时的文件系统错误
         self.temp_files.clear()
     
     def load_docx_for_postprocessing(self, docx_path: str) -> Document:
@@ -121,18 +115,6 @@ class PandocProcessor:
         try:
             pypandoc.get_pandoc_version()
             return True
-        except Exception:
+        except (OSError, RuntimeError):
             return False
     
-    def get_supported_formats(self) -> Dict[str, Any]:
-        """获取支持的格式信息"""
-        try:
-            from_formats = pypandoc.get_pandoc_formats()[0]
-            to_formats = pypandoc.get_pandoc_formats()[1]
-            return {
-                'from': from_formats,
-                'to': to_formats,
-                'version': pypandoc.get_pandoc_version()
-            }
-        except Exception as e:
-            return {'error': str(e)}

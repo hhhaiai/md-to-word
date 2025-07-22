@@ -1,5 +1,7 @@
 from docx.shared import Mm, Pt
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+import os
+from pathlib import Path
 
 class DocumentConfig:
     """公文格式配置类，基于GB/T 9704-2012标准"""
@@ -95,18 +97,32 @@ class DocumentConfig:
         'image_wrap_type': 'topAndBottom'  # 环绕类型：topAndBottom, square, tight, through, none
     }
     
+    # Obsidian路径配置
+    OBSIDIAN_CONFIG = {
+        # Obsidian Vault名称（用户可配置）
+        'vault_name': os.getenv('OBSIDIAN_VAULT_NAME', "YT's Obsidian"),
+        
+        # 附件文件夹名称（用户可配置）
+        'attachments_folder': os.getenv('OBSIDIAN_ATTACHMENTS_FOLDER', '- Attachments'),
+        
+        # 是否自动检测iCloud路径
+        'auto_detect_icloud': True,
+        
+        # 完整Vault路径（如果指定，优先级高于auto_detect_icloud）
+        'vault_path': os.getenv('OBSIDIAN_VAULT_PATH', None),
+        
+        # 备选基础路径（当iCloud检测失败时使用）
+        'fallback_base_paths': [
+            Path.home() / 'Documents',
+            Path.home() / 'Desktop', 
+            Path('.')
+        ]
+    }
+    
     # 图片路径配置
     IMAGE_CONFIG = {
-        # Obsidian附件默认路径
-        'obsidian_attachments_path': '/Users/yishentu/Library/Mobile Documents/iCloud~md~obsidian/Documents/YT\'s Obsidian/- Attachments',
-        
-        # 图片搜索路径列表（按优先级排序）
-        'search_paths': [
-            '/Users/yishentu/Library/Mobile Documents/iCloud~md~obsidian/Documents/YT\'s Obsidian/- Attachments',
-            './images',
-            './assets',
-            './'
-        ],
+        # 动态生成的搜索路径列表（通过 _build_search_paths() 方法构建）
+        'search_paths': [],  # 将在运行时动态填充
         
         # 支持的图片格式
         'supported_formats': ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp'],
@@ -117,3 +133,54 @@ class DocumentConfig:
         # 图片输出目录（相对于Word文档）
         'output_dir': 'images'
     }
+    
+    @classmethod
+    def _build_search_paths(cls):
+        """根据Obsidian配置动态构建图片搜索路径"""
+        paths = []
+        config = cls.OBSIDIAN_CONFIG
+        
+        # 方案1: 用户直接指定完整Vault路径
+        if config.get('vault_path'):
+            vault_path = Path(config['vault_path'])
+            if vault_path.exists():
+                attachments_path = vault_path / config['attachments_folder']
+                if attachments_path.exists():
+                    paths.append(str(attachments_path))
+                paths.append(str(vault_path))
+        
+        # 方案2: 自动检测iCloud + Vault名称
+        elif config.get('vault_name') and config.get('auto_detect_icloud'):
+            # 标准的iCloud Obsidian路径
+            icloud_base = Path.home() / 'Library/Mobile Documents/iCloud~md~obsidian/Documents'
+            if icloud_base.exists():
+                vault_path = icloud_base / config['vault_name']
+                if vault_path.exists():
+                    attachments_path = vault_path / config['attachments_folder']
+                    if attachments_path.exists():
+                        paths.append(str(attachments_path))
+                    paths.append(str(vault_path))
+            
+            # 尝试备选基础路径
+            if not paths:
+                for base_path in config.get('fallback_base_paths', []):
+                    vault_path = base_path / config['vault_name']
+                    if vault_path.exists():
+                        attachments_path = vault_path / config['attachments_folder']
+                        if attachments_path.exists():
+                            paths.append(str(attachments_path))
+                        paths.append(str(vault_path))
+                        break
+        
+        # 添加标准备选路径
+        fallback_paths = ['./images', './assets', './']
+        paths.extend(fallback_paths)
+        
+        return paths
+    
+    @classmethod
+    def get_image_search_paths(cls):
+        """获取图片搜索路径，如果未初始化则动态构建"""
+        if not cls.IMAGE_CONFIG['search_paths']:
+            cls.IMAGE_CONFIG['search_paths'] = cls._build_search_paths()
+        return cls.IMAGE_CONFIG['search_paths']

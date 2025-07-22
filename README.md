@@ -1,6 +1,6 @@
 # Markdown到Word公文格式转换工具
 
-这是一个基于Pandoc的Python工具，用于将Markdown文件转换为符合中国国家标准GB/T 9704-2012的Word公文格式。支持LaTeX数学公式、表格和多级列表。
+这是一个基于Pandoc的Python工具，用于将Markdown文件转换为符合中国国家标准GB/T 9704-2012的Word公文格式。采用模块化架构设计，支持LaTeX数学公式、表格和多级列表，具备高性能处理和智能图片处理能力。
 
 ## 功能特点
 
@@ -17,6 +17,8 @@
 - ✅ 去除加粗标记，保持格式统一
 - ✅ 支持附件说明
 - ✅ 自动添加页码
+- ✅ **性能优化**（模块化架构、批量处理、缓存机制）
+- ✅ **安全增强**（路径遍历防护、XML注入防护）
 
 ## 系统要求
 
@@ -30,7 +32,7 @@
 
 ### Python依赖
 ```bash
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 ```
 
 依赖包：
@@ -68,7 +70,7 @@ python3 md_to_word.py --help
 
 ## 转换流程
 
-本工具采用**预处理 → Pandoc转换 → 后处理**三阶段架构：
+本工具采用**预处理 → Pandoc转换 → 模块化后处理**三阶段优化架构：
 
 1. **预处理阶段**（markdown_preprocessor.py）
    - 过滤YAML front matter
@@ -83,11 +85,13 @@ python3 md_to_word.py --help
    - 处理多级列表
    - 生成基础Word文档
 
-3. **后处理阶段**（word_postprocessor.py）
-   - 应用GB/T 9704-2012格式要求
-   - 设置字体、字号、行距
-   - 格式化标题和正文
-   - 添加页码和附件信息
+3. **模块化后处理阶段**（word_postprocessor.py + formatters.py）
+   - 页面格式设置和页码添加（PageFormatter）
+   - 段落和标题格式化（ParagraphFormatter）
+   - 文档标题处理（DocumentTitleFormatter）
+   - 表格格式优化（TableFormatter）
+   - 列表格式化（ListFormatter）
+   - 图片处理和标题清理（ImageFormatter）
 
 ## Markdown格式要求
 
@@ -102,31 +106,31 @@ python3 md_to_word.py --help
 
 **行内公式**：
 ```markdown
-载流子浓度达 $1.78 \times 10^{18}$ cm⁻³
+$1.78 \times 10^{18}$ cm⁻³
 ```
 
 **块级公式**：
 ```markdown
-$$BFOM = \frac{V_B^2}{R_{on,sp}} \propto \epsilon\mu E_c^3$$
+$$E = mc^2$$
 ```
 
 ### 表格支持
 
 ```markdown
-| 材料 | 禁带宽度(eV) | 击穿场强(MV/cm) |
-|------|-------------|----------------|
-| Si   | 1.12        | 0.3            |
-| GaN  | 3.4         | 4.9            |
-| SiC  | 3.3         | 3.1            |
+| 项目 | 数量 | 状态 |
+|------|------|------|
+| 任务A | 5 | 进行中 |
+| 任务B | 3 | 已完成 |
+| 任务C | 8 | 计划中 |
 ```
 
 ### 列表支持
 
 **有序列表**：
 ```markdown
-1. **第一个要点：技术突破**
-2. **第二个要点：市场优势**
-3. **第三个要点：团队实力**
+1. 第一个要点
+2. 第二个要点
+3. 第三个要点
 ```
 
 **无序列表**：
@@ -148,7 +152,7 @@ $$BFOM = \frac{V_B^2}{R_{on,sp}} \propto \epsilon\mu E_c^3$$
 **Obsidian格式**（推荐）：
 ```markdown
 ![[attachment_file.png]]
-![图 1：工艺流程](process_diagram.png)
+![图表标题](diagram.png)
 ```
 
 **图片功能特性**：
@@ -185,13 +189,13 @@ $$BFOM = \frac{V_B^2}{R_{on,sp}} \propto \epsilon\mu E_c^3$$
 |------|------|
 | 功率 | 100W |
 
-1. **第一个要点**：详细说明
-2. **第二个要点**：包含公式 $P = I^2R$
+1. 第一个要点：详细说明
+2. 第二个要点：包含公式 $P = I^2R$
 
 **加粗文字**会被去除格式。
 
-附件：1. 技术规格书
-附件：2. 测试报告
+附件：1. 相关文档
+附件：2. 参考资料
 
 ---
 Date: 2025-07-19
@@ -224,17 +228,18 @@ Date: 2025-07-19
 md-to-word/
 ├── md_to_word.py              # 主程序入口
 ├── requirements.txt           # Python依赖列表
-├── config.py                 # 公文格式配置（包含Pandoc参数）
-├── markdown_preprocessor.py  # Markdown预处理器
+├── config.py                 # 公文格式配置
+├── markdown_preprocessor.py  # Markdown预处理器（重构优化）
 ├── pandoc_processor.py       # Pandoc转换处理器
-├── word_postprocessor.py     # Word后处理器（格式化）
+├── word_postprocessor.py     # Word后处理控制器（重构）
+├── formatters.py             # 专业格式化器类集合（新增）
+├── xpath_cache.py           # XPath查询优化器（新增）
+├── exceptions.py            # 专门异常类型（新增）
 ├── chinese_filter.lua        # Pandoc中文处理过滤器
 ├── README.md                 # 使用说明（本文件）
 ├── CLAUDE.md                 # 项目开发记录
-└── examples/                 # 示例和测试文件
-    ├── test_formatting.md    # 格式化测试文档
-    ├── header_test.md        # 标题测试文档
-    ├── list_test.md          # 列表测试文档
+└── examples/                # 示例文件
+    ├── *.md                 # 示例Markdown文件
     └── *.docx               # 转换结果示例
 ```
 
@@ -251,11 +256,14 @@ md-to-word/
 ## 技术架构
 
 - **转换引擎**：Pandoc（专业文档转换）
+- **架构设计**：模块化组件，专业格式化器类集合
+- **性能优化**：批量处理、XPath缓存、预编译正则表达式
 - **数学公式**：MathML渲染（原生Word公式）
-- **表格处理**：Pandoc原生转换 + 格式美化
+- **表格处理**：Pandoc原生转换 + 智能格式优化
 - **列表处理**：保持层级结构和缩进
 - **图片处理**：智能路径解析 + 格式化 + 文字环绕
 - **字体处理**：符合国标的中文字体设置
+- **安全机制**：路径遍历防护、XML注入防护、异常处理优化
 
 ## 注意事项
 
@@ -268,8 +276,20 @@ md-to-word/
 ## 版本信息
 
 - **当前版本**：2.0.0
-- **更新日期**：2025年7月21日
-- **重大更新**：基于Pandoc架构重构，新增完整的LaTeX公式、表格和列表支持
+- **更新日期**：2025年7月22日
+- **重大更新**：
+  - 完成模块化架构重构和性能优化
+  - 新增完整的LaTeX公式、表格和列表支持
+  - 实现智能图片处理功能
+  - 提升处理性能和安全性
+
+## 性能优化特性
+
+- **模块化架构**：拆分为6个专门的格式化器类，职责分离
+- **批量处理**：减少DOM遍历次数，提升处理效率
+- **缓存机制**：XPath查询结果缓存，避免重复计算
+- **预编译模式**：正则表达式预编译，减少运行时开销
+- **安全增强**：路径遍历防护，XML注入防护，异常处理优化
 
 ## 问题反馈
 

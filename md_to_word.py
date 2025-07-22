@@ -7,6 +7,7 @@ from pathlib import Path
 from markdown_preprocessor import MarkdownPreprocessor
 from pandoc_processor import PandocProcessor
 from word_postprocessor import WordPostprocessor
+from exceptions import FileProcessingError, PandocError
 
 def main():
     """主程序入口"""
@@ -34,7 +35,7 @@ def main():
     parser.add_argument(
         '--version',
         action='version',
-        version='%(prog)s 1.0.0'
+        version='%(prog)s 2.0.0'
     )
     
     args = parser.parse_args()
@@ -94,8 +95,14 @@ def main():
         
         print(f"转换完成！输出文件: {output_path}")
         
+    except FileProcessingError as e:
+        print(f"文件处理错误: {e}", file=sys.stderr)
+        sys.exit(1)
+    except PandocError as e:
+        print(f"Pandoc转换错误: {e}", file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
-        print(f"转换过程中出现错误: {e}", file=sys.stderr)
+        print(f"转换过程中出现未知错误: {e}", file=sys.stderr)
         sys.exit(1)
 
 if __name__ == '__main__':
