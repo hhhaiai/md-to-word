@@ -10,6 +10,11 @@ from exceptions import FileProcessingError, MarkdownParsingError, PathSecurityEr
 class MarkdownPreprocessor:
     """Markdown预处理器，用于清理和过滤Markdown内容后交给pandoc处理"""
     
+    # Caption处理相关常量
+    CAPTION_SEARCH_BEFORE = 10  # 向前查找行数
+    CAPTION_SEARCH_AFTER = 20   # 向后查找行数
+    CAPTION_MAX_EMPTY_LINES = 2  # 最大允许空行数
+    
     def __init__(self):
         self.image_config = DocumentConfig.IMAGE_CONFIG
     
@@ -44,10 +49,7 @@ class MarkdownPreprocessor:
         lines = self._remove_bold_formatting(lines)
         lines = self._reposition_captions(lines)  # 在合并行之前重新定位标题
         lines = self._remove_numbered_list_spaces(lines)
-        lines = self._convert_ordered_lists_to_paragraphs(lines)
         lines = self._fix_unordered_list_asterisks(lines)
-        lines = self._process_math_formulas(lines)
-        # 不处理图片，保留原始语法
         lines = self._merge_broken_lines(lines)
         lines = self._skip_first_level_headers(lines)
         
@@ -125,90 +127,6 @@ class MarkdownPreprocessor:
         
         return processed_lines
     
-    def _remove_numbered_list_spaces(self, lines: List[str]) -> List[str]:
-        """去除数字列表项中的空格，如将'1. '转换为'1.'"""
-        processed_lines = []
-        
-        for line in lines:
-            # 使用预编译的正则表达式
-            processed_line = Patterns.NUMBERED_LIST_PATTERN.sub(r'\1\2.', line)
-            processed_lines.append(processed_line)
-        
-        return processed_lines
-    
-    def _process_math_formulas(self, lines: List[str]) -> List[str]:
-        """处理数学公式 - 保持LaTeX格式交给pandoc处理"""
-        # 保持原始LaTeX格式，由pandoc负责MathML转换
-        return lines
-    
-    
-    def _find_image_path(self, image_name: str, source_dir: str) -> str:
-        """在配置的搜索路径中查找图片"""
-        
-        # 构建搜索路径列表
-        search_paths = [
-            # 首先在源文件目录查找
-            source_dir,
-            # 然后在配置的搜索路径中查找（动态获取）
-            *DocumentConfig.get_image_search_paths()
-        ]
-        
-        # 支持的图片格式
-        supported_formats = self.image_config['supported_formats']
-        
-        for search_path_str in search_paths:
-            search_path = Path(search_path_str).resolve()
-            if not search_path.exists() or not search_path.is_dir():
-                continue
-            
-            # 安全的路径构建和验证
-            try:
-                # 构建目标图片路径
-                image_path = (search_path / image_name).resolve()
-                
-                # 关键安全检查：确保解析后的路径在允许的搜索目录内
-                if not self._is_safe_path(image_path, search_path):
-                    continue
-                
-                # 直接匹配文件名
-                if image_path.is_file():
-                    return str(image_path)
-                
-                # 如果没有扩展名，尝试添加支持的格式
-                if not image_path.suffix:
-                    for ext in supported_formats:
-                        path_with_ext = image_path.with_suffix(ext)
-                        if path_with_ext.is_file() and self._is_safe_path(path_with_ext, search_path):
-                            return str(path_with_ext)
-                            
-            except (OSError, ValueError) as e:
-                # 处理无效路径或文件系统错误
-                continue
-        
-        return None
-    
-    def _is_safe_path(self, target_path: Path, base_path: Path) -> bool:
-        """
-        验证目标路径是否在基础路径范围内，防止路径遍历攻击
-        
-        Args:
-            target_path: 目标文件的绝对路径
-            base_path: 允许的基础目录路径
-            
-        Returns:
-            bool: 如果路径安全则返回True，否则返回False
-        """
-        try:
-            # 确保两个路径都是绝对路径
-            target_resolved = target_path.resolve()
-            base_resolved = base_path.resolve()
-            
-            # 检查目标路径是否在基础路径内（包括基础路径本身）
-            return base_resolved == target_resolved or base_resolved in target_resolved.parents
-            
-        except (OSError, ValueError):
-            # 如果路径解析失败，认为不安全
-            return False
     
     def _merge_broken_lines(self, lines: List[str]) -> List[str]:
         """合并被意外分割的行，但保持列表缩进"""
@@ -253,6 +171,10 @@ class MarkdownPreprocessor:
         if self._is_math_formula_line(current_line):
             return False
             
+        # 如果当前行是特殊格式，不合并
+        if self._is_special_format_line(current_line):
+            return False
+            
         # 检查下一行是否为不应合并的特殊格式
         if self._is_special_format_line(next_line):
             return False
@@ -264,21 +186,20 @@ class MarkdownPreprocessor:
         return True
     
     def _is_special_format_line(self, line: str) -> bool:
-        """检查是否为特殊格式的行（标题、附件、表格、列表等）"""
+        """检查是否为特殊格式的行（标题、附件、表格等）"""
         # 检查各种不应合并的格式
         special_checks = [
             line.startswith('#'),              # 标题
             line.startswith('附件'),            # 附件
             line.endswith('：') or line.endswith(':'),  # 冒号结尾
             line.startswith('|'),              # 表格行
-            line.startswith('-'),              # 列表项
-            line.startswith('*'),              # 列表项
+            line.startswith('-'),              # 列表项（保留以避免合并破坏列表）
+            line.startswith('*'),              # 列表项（保留以避免合并破坏列表）
             line == '$$',                      # 数学公式块分隔符
             line.startswith('$$'),             # 数学公式开始/结束行
             line.endswith('$$'),               # 数学公式开始/结束行
             Patterns.CAPTION_PATTERN.match(line),  # 图表caption（使用预编译的模式）
-            Patterns.ORDERED_LIST_PATTERN_PREPROCESSOR.match(line),     # 有序列表 (使用预处理器版本)
-            Patterns.INDENTED_LIST_PATTERN.match(line),    # 带缩进的列表项
+            re.match(r'^\d+\.', line),         # 数字列表项（1. 2. 或 1.内容 等）
         ]
         
         return any(special_checks)
@@ -303,38 +224,14 @@ class MarkdownPreprocessor:
         
         return processed_lines
     
-    def _convert_ordered_lists_to_paragraphs(self, lines: List[str]) -> List[str]:
-        """将有序列表转换为普通段落，保留序号但阻止pandoc识别为列表"""
+    def _remove_numbered_list_spaces(self, lines: List[str]) -> List[str]:
+        """去除数字列表项中的空格，如将'1. '转换为'1.'"""
         processed_lines = []
-        i = 0
         
-        while i < len(lines):
-            line = lines[i]
-            line_stripped = line.strip()
-            
-            # 检测有序列表项 (例: "1. **标题**")
-            if Patterns.ORDERED_LIST_PATTERN_PREPROCESSOR.match(line_stripped):
-                # 保留原始缩进，但添加特殊处理防止pandoc识别为列表
-                # 在序号后添加全角空格，这样pandoc不会将其识别为列表
-                # 获取原始行的缩进
-                indent = len(line) - len(line.lstrip())
-                modified_line = ' ' * indent + Patterns.ORDERED_LIST_DOT_REPLACE_PATTERN.sub(r'\1.　', line_stripped)
-                processed_lines.append(modified_line)
-                
-                # 检查后续行是否为列表项的续行内容
-                j = i + 1
-                while j < len(lines) and lines[j].strip() and not Patterns.ORDERED_LIST_PATTERN_PREPROCESSOR.match(lines[j].strip()) and not lines[j].strip().startswith('#'):
-                    # 这是列表项的续行内容，作为单独段落处理
-                    continuation_line = lines[j].strip()
-                    if continuation_line:  # 非空行
-                        processed_lines.append('')  # 添加空行分隔
-                        processed_lines.append(continuation_line)
-                    j += 1
-                
-                i = j  # 跳过已处理的行
-            else:
-                processed_lines.append(line)
-                i += 1
+        for line in lines:
+            # 使用正则表达式匹配数字列表格式并去除空格
+            processed_line = re.sub(r'^(\s*)(\d+)\.\s+', r'\1\2.', line)
+            processed_lines.append(processed_line)
         
         return processed_lines
     
@@ -344,14 +241,15 @@ class MarkdownPreprocessor:
         
         for line in lines:
             # 检测无序列表项 (例: "* 项目内容")
-            if Patterns.UNORDERED_LIST_PATTERN.match(line):
-                # 在星号前后加空格，确保pandoc正确识别为列表
-                processed_line = Patterns.UNORDERED_LIST_REPLACE_PATTERN.sub(r'\1- ', line)
+            if re.match(r'^(\s*)\*\s+', line):
+                # 将星号替换为短横线
+                processed_line = re.sub(r'^(\s*)\*\s+', r'\1- ', line)
                 processed_lines.append(processed_line)
             else:
                 processed_lines.append(line)
         
         return processed_lines
+    
     
     def _reposition_captions(self, lines: List[str]) -> List[str]:
         """重新定位图表标题，确保标题始终在图表后面"""
@@ -363,105 +261,109 @@ class MarkdownPreprocessor:
             
             # 检查是否为图表标题
             caption_match = Patterns.CAPTION_PATTERN.match(line)
-            if caption_match:
-                caption_type = caption_match.group(1)  # 图/图片/表/表格/图表
-                caption_number = caption_match.group(2)  # 数字
+            if not caption_match:
+                # 不是标题，直接添加
+                processed_lines.append(lines[i])
+                i += 1
+                continue
+            
+            caption_type = caption_match.group(1)  # 图/图片/表/表格/图表
+            
+            # 检查标题是否已经在正确位置
+            if self._is_caption_after_element(lines, i, caption_type):
+                processed_lines.append(lines[i])
+                i += 1
+                continue
+            
+            # 标题不在正确位置，查找对应的图表元素
+            element_info = self._find_element_for_caption(lines, i, caption_type)
+            
+            if element_info['found']:
+                # 需要移动标题到元素后面
+                caption_line = lines[i]
+                i += 1
                 
-                # 判断标题类型
-                is_figure_caption = caption_type in ['图', '图片', '图表']
-                is_table_caption = caption_type in ['表', '表格']
-                
-                # 首先检查标题是否已经在正确位置（紧跟在图表后面）
-                # 向前查找最近的图表元素
-                is_after_element = False
-                empty_lines_before = 0
-                
-                for j in range(i - 1, max(i - 10, -1), -1):  # 最多向前查找10行
-                    prev_line = lines[j].strip()
-                    
-                    if not prev_line:  # 空行
-                        empty_lines_before += 1
-                        continue
-                    
-                    # 检查是否为对应类型的元素
-                    if is_figure_caption and (Patterns.MARKDOWN_IMAGE_PATTERN.match(prev_line) or 
-                                            Patterns.OBSIDIAN_IMAGE_PATTERN.match(prev_line)):
-                        # 找到了前面的图片，如果中间空行不超过2行，认为caption属于这个图片
-                        if empty_lines_before <= 2:
-                            is_after_element = True
-                        break
-                    elif is_table_caption and Patterns.TABLE_ROW_PATTERN.match(prev_line):
-                        # 检查是否是完整表格的最后一行
-                        # 继续向前查找，确认这是表格的一部分
-                        is_table_end = True
-                        if j + 1 < len(lines):
-                            next_line = lines[j + 1].strip()
-                            # 如果下一行也是表格行，说明不是表格结束
-                            if next_line and Patterns.TABLE_ROW_PATTERN.match(next_line):
-                                is_table_end = False
-                        
-                        if is_table_end and empty_lines_before <= 2:
-                            is_after_element = True
-                        break
-                    else:
-                        # 遇到其他内容，停止查找
-                        break
-                
-                # 如果caption已经在正确位置（某个图表元素后面），保持不动
-                if is_after_element:
+                # 添加从标题后到元素（含元素）的所有行
+                while i <= element_info['index']:
                     processed_lines.append(lines[i])
                     i += 1
-                    continue
                 
-                # 标题不在正确位置，向后查找对应的图表元素
-                found_element = False
-                element_index = -1
-                
-                # 查找范围：从下一行开始，最多查找20行
-                for j in range(i + 1, min(i + 21, len(lines))):
-                    check_line = lines[j].strip()
-                    
-                    # 如果遇到另一个标题，停止查找
-                    if Patterns.CAPTION_PATTERN.match(check_line):
-                        break
-                    
-                    # 检查是否为图片
-                    if is_figure_caption and (Patterns.MARKDOWN_IMAGE_PATTERN.match(check_line) or 
-                                            Patterns.OBSIDIAN_IMAGE_PATTERN.match(check_line)):
-                        found_element = True
-                        element_index = j
-                        break
-                    
-                    # 检查是否为表格（连续的表格行）
-                    if is_table_caption and Patterns.TABLE_ROW_PATTERN.match(check_line):
-                        # 确认是表格：检查是否有连续的表格行
-                        if j + 1 < len(lines) and Patterns.TABLE_ROW_PATTERN.match(lines[j + 1].strip()):
-                            found_element = True
-                            element_index = j
-                            # 找到表格的结束位置
-                            while element_index + 1 < len(lines) and Patterns.TABLE_ROW_PATTERN.match(lines[element_index + 1].strip()):
-                                element_index += 1
-                            break
-                
-                if found_element:
-                    # 标题在元素前面，需要移动到元素后面
-                    # 保存原始标题行（包含缩进）
-                    caption_line = lines[i]
-                    
-                    # 跳过当前标题行
-                    i += 1
-                    
-                    # 添加从标题后到元素（含元素）的所有行
-                    while i <= element_index:
-                        processed_lines.append(lines[i])
-                        i += 1
-                    
-                    # 在元素后添加标题
-                    processed_lines.append(caption_line)
-                    continue
-            
-            # 不是需要移动的标题，或标题已经在正确位置，直接添加
-            processed_lines.append(lines[i])
-            i += 1
+                # 在元素后添加标题
+                processed_lines.append(caption_line)
+            else:
+                # 没找到对应元素，保持原位置
+                processed_lines.append(lines[i])
+                i += 1
         
         return processed_lines
+    
+    def _is_caption_after_element(self, lines: List[str], caption_index: int, caption_type: str) -> bool:
+        """检查caption是否已在正确位置（紧跟在对应图表后面）"""
+        empty_lines = 0
+        
+        # 向前查找，最多查找CAPTION_SEARCH_BEFORE行
+        for j in range(caption_index - 1, max(caption_index - self.CAPTION_SEARCH_BEFORE, -1), -1):
+            prev_line = lines[j].strip()
+            
+            if not prev_line:  # 空行
+                empty_lines += 1
+                continue
+            
+            # 检查是否为匹配的元素
+            if self._is_matching_element(prev_line, caption_type):
+                # 如果是表格，需要确认是表格的最后一行
+                if caption_type in ['表', '表格'] and j + 1 < len(lines):
+                    next_line = lines[j + 1].strip()
+                    if next_line and Patterns.TABLE_ROW_PATTERN.match(next_line):
+                        return False  # 不是表格最后一行
+                
+                # 检查空行数是否在允许范围内
+                return empty_lines <= self.CAPTION_MAX_EMPTY_LINES
+            else:
+                # 遇到其他内容，停止查找
+                break
+        
+        return False
+    
+    def _find_element_for_caption(self, lines: List[str], caption_index: int, caption_type: str) -> Dict[str, Any]:
+        """向后查找caption对应的图表元素"""
+        # 从下一行开始，最多查找CAPTION_SEARCH_AFTER行
+        for j in range(caption_index + 1, min(caption_index + self.CAPTION_SEARCH_AFTER + 1, len(lines))):
+            check_line = lines[j].strip()
+            
+            # 如果遇到另一个标题，停止查找
+            if Patterns.CAPTION_PATTERN.match(check_line):
+                break
+            
+            # 检查是否为匹配的元素
+            if self._is_matching_element(check_line, caption_type):
+                element_index = j
+                
+                # 如果是表格，找到表格的结束位置
+                if caption_type in ['表', '表格']:
+                    element_index = self._find_table_end(lines, j)
+                
+                return {'found': True, 'index': element_index}
+        
+        return {'found': False, 'index': -1}
+    
+    def _is_matching_element(self, line: str, caption_type: str) -> bool:
+        """判断是否为匹配的图表元素"""
+        if caption_type in ['图', '图片', '图表']:
+            return (Patterns.MARKDOWN_IMAGE_PATTERN.match(line) or 
+                    Patterns.OBSIDIAN_IMAGE_PATTERN.match(line))
+        elif caption_type in ['表', '表格']:
+            return Patterns.TABLE_ROW_PATTERN.match(line)
+        return False
+    
+    def _find_table_end(self, lines: List[str], table_start: int) -> int:
+        """找到表格的结束位置"""
+        end_index = table_start
+        
+        # 确认是表格：检查是否有连续的表格行
+        if table_start + 1 < len(lines) and Patterns.TABLE_ROW_PATTERN.match(lines[table_start + 1].strip()):
+            # 继续向后查找直到表格结束
+            while end_index + 1 < len(lines) and Patterns.TABLE_ROW_PATTERN.match(lines[end_index + 1].strip()):
+                end_index += 1
+        
+        return end_index

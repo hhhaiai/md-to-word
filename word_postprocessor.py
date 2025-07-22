@@ -15,7 +15,6 @@ from formatters import (
     ListFormatter, 
     ImageFormatter
 )
-from markdown_preprocessor import MarkdownPreprocessor
 
 
 class WordPostprocessor:
@@ -128,9 +127,6 @@ class WordPostprocessor:
     
     def process_and_insert_images(self):
         """处理文档中的图片语法并插入实际图片"""
-        # 初始化图片查找器
-        self.image_finder = MarkdownPreprocessor()
-        
         # 初始化已处理的数学caption文本集合
         self._processed_math_caption_texts = set()
         
@@ -225,9 +221,42 @@ class WordPostprocessor:
         if os.path.isabs(image_path) or image_path.startswith(('http://', 'https://')):
             return image_path
         
-        # 使用图片查找器查找实际路径
-        actual_path = self.image_finder._find_image_path(image_path, self.doc_dir)
-        return actual_path
+        # 在配置的搜索路径中查找图片
+        from pathlib import Path
+        
+        # 构建搜索路径列表
+        search_paths = [
+            self.doc_dir,  # 首先在源文件目录查找
+            *DocumentConfig.get_image_search_paths()  # 然后在配置的搜索路径中查找
+        ]
+        
+        # 支持的图片格式
+        supported_formats = DocumentConfig.IMAGE_CONFIG['supported_formats']
+        
+        for search_path_str in search_paths:
+            search_path = Path(search_path_str).resolve()
+            if not search_path.exists() or not search_path.is_dir():
+                continue
+            
+            try:
+                # 构建目标图片路径
+                image_path_obj = (search_path / image_path).resolve()
+                
+                # 直接匹配文件名
+                if image_path_obj.is_file():
+                    return str(image_path_obj)
+                
+                # 如果没有扩展名，尝试添加支持的格式
+                if not image_path_obj.suffix:
+                    for ext in supported_formats:
+                        path_with_ext = image_path_obj.with_suffix(ext)
+                        if path_with_ext.is_file():
+                            return str(path_with_ext)
+                            
+            except (OSError, ValueError):
+                continue
+        
+        return None
     
     def _replace_paragraph_with_image(self, paragraph, image_info: Dict):
         """将包含图片语法的段落替换为实际图片"""
@@ -356,65 +385,43 @@ class WordPostprocessor:
             self._remove_image_syntax_only(caption_paragraph, image_info)
     
     def _process_captions(self):
-        """处理并格式化所有图片和表格caption，统一放在图表下方"""
+        """格式化所有图片和表格caption（位置已在预处理阶段调整）"""
         try:
-            # 综合的caption识别和标准化模式
-            # 匹配: 图/图片/图表 + 可选空格 + 数字 + 可选空格 + [.:：] + 内容
-            image_pattern = re.compile(r'^(图片?|图表)\s*(\d+)\s*[.:：]\s*(.*?)$')
-            # 匹配: 表/表格 + 可选空格 + 数字 + 可选空格 + [.:：] + 内容  
-            table_pattern = re.compile(r'^(表格?)\s*(\d+)\s*[.:：]\s*(.*?)$')
+            # caption识别模式
+            caption_pattern = re.compile(r'^(图片?|图表|表格?)\s*(\d+)\s*[.:：]\s*(.*?)$')
             
-            # 第一步：标准化所有caption格式，但不移动位置
+            # 格式化所有caption，不再处理位置
             for paragraph in self.doc.paragraphs:
                 text = paragraph.text.strip()
-                if text:
-                    # 检查是否是已处理的数学caption，跳过避免重复处理
-                    if hasattr(self, '_processed_math_caption_texts') and text in self._processed_math_caption_texts:
-                        continue
+                if not text:
+                    continue
+                
+                # 检查是否是已处理的数学caption，跳过避免重复处理
+                if hasattr(self, '_processed_math_caption_texts') and text in self._processed_math_caption_texts:
+                    continue
+                
+                # 检查是否匹配caption模式
+                caption_match = caption_pattern.match(text)
+                if caption_match:
+                    caption_type = caption_match.group(1)
+                    number = caption_match.group(2)
+                    content = caption_match.group(3)
                     
-                    # 检查是否包含数学公式，如果包含则跳过文本替换
+                    # 检查是否包含数学公式
                     has_math = self._has_math_formula(paragraph)
                     
-                    # 检查是否已经是标准化格式 (避免重复处理)
-                    # 修改检测逻辑：图X. 或 图 X: 都视为已处理
-                    is_already_standardized = (
-                        (text.startswith('图') and '. ' in text) or  # 图5. xxx
-                        (text.startswith('图 ') and (':' in text or '：' in text))  # 图 5: xxx or 图 5： xxx
-                    )
-                    
-                    # 处理图片caption
-                    image_match = image_pattern.match(text)
-                    if image_match and not is_already_standardized:
-                        number = image_match.group(2)
-                        content = image_match.group(3)
-                        
-                        if not has_math:
-                            # 如果没有数学公式，可以安全地替换文本
+                    # 标准化格式（仅在没有数学公式时替换文本）
+                    if not has_math:
+                        if caption_type in ['图', '图片', '图表']:
                             paragraph.text = f"图{number}. {content}"
                         else:
-                            # 如果有数学公式，只进行格式化，不替换文本
-                            pass
-                        
-                        self.image_formatter._format_image_caption(paragraph)
-                    elif is_already_standardized and '图' in text:
-                        # 如果已经是标准化格式，只进行格式化
-                        self.image_formatter._format_image_caption(paragraph)
+                            paragraph.text = f"表{number}. {content}"
                     
+                    # 应用格式
+                    if caption_type in ['图', '图片', '图表']:
+                        self.image_formatter._format_image_caption(paragraph)
                     else:
-                        # 处理表格caption
-                        table_match = table_pattern.match(text)
-                        if table_match:
-                            number = table_match.group(2)
-                            content = table_match.group(3)
-                            
-                            if not has_math:
-                                # 如果没有数学公式，可以安全地替换文本
-                                paragraph.text = f"表{number}. {content}"
-                            else:
-                                # 如果有数学公式，只进行格式化，不替换文本
-                                pass
-                            
-                            self._format_table_caption(paragraph)
+                        self._format_table_caption(paragraph)
             
         except Exception as e:
             pass  # 静默处理错误
