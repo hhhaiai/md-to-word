@@ -2,7 +2,7 @@
 
 这是一个基于Pandoc的Python工具，用于将Markdown文件转换为符合中国国家标准GB/T 9704-2012的Word公文格式。采用模块化架构设计，支持LaTeX数学公式、表格和多级列表，具备高性能处理和智能图片处理能力。
 
-🆕 **v2.1.0更新**（2025-07-22）：消除功能冗余，优化代码结构，提升可维护性
+🆕 **v2.2.0更新**（2025-07-23）：完成模块化重构，优化项目结构，提升代码组织性
 
 ## 功能特点
 
@@ -76,7 +76,7 @@ python3 md_to_word.py --help
 
 本工具采用**预处理 → Pandoc转换 → 模块化后处理**三阶段优化架构，每个环节职责明确：
 
-1. **预处理阶段**（markdown_preprocessor.py）
+1. **预处理阶段**（src/core/markdown_preprocessor.py）
    - 过滤YAML front matter
    - 去除加粗标记
    - 列表格式处理（`1. ` → `1.`，`* ` → `- `）
@@ -85,13 +85,13 @@ python3 md_to_word.py --help
    - 智能处理换行（避免破坏表格和列表）
    - 过滤结尾元数据
 
-2. **Pandoc转换阶段**（pandoc_processor.py）
+2. **Pandoc转换阶段**（src/core/pandoc_processor.py）
    - 使用MathML渲染数学公式
    - 转换表格格式
    - 处理多级列表
    - 生成基础Word文档
 
-3. **模块化后处理阶段**（word_postprocessor.py + formatters.py）
+3. **模块化后处理阶段**（src/core/word_postprocessor.py + src/formatters/）
    - 页面格式设置和页码添加（PageFormatter）
    - 段落和标题格式化（ParagraphFormatter）
    - 文档标题处理（DocumentTitleFormatter）
@@ -234,21 +234,39 @@ Date: 2025-07-19
 
 ```
 md-to-word/
-├── md_to_word.py              # 主程序入口
-├── requirements.txt           # Python依赖列表
-├── config.py                 # 公文格式配置
-├── markdown_preprocessor.py  # Markdown预处理器（重构优化）
-├── pandoc_processor.py       # Pandoc转换处理器
-├── word_postprocessor.py     # Word后处理控制器（重构）
-├── formatters.py             # 专业格式化器类集合（新增）
-├── xpath_cache.py           # XPath查询优化器（新增）
-├── exceptions.py            # 专门异常类型（新增）
-├── chinese_filter.lua        # Pandoc中文处理过滤器
-├── README.md                 # 使用说明（本文件）
-├── CLAUDE.md                 # 项目开发记录
-└── examples/                # 示例文件
-    ├── *.md                 # 示例Markdown文件
-    └── *.docx               # 转换结果示例
+├── src/                          # 源代码目录
+│   ├── __init__.py
+│   ├── core/                     # 核心处理模块
+│   │   ├── __init__.py
+│   │   ├── markdown_preprocessor.py  # Markdown预处理器
+│   │   ├── pandoc_processor.py       # Pandoc转换处理器
+│   │   └── word_postprocessor.py     # Word后处理控制器
+│   ├── formatters/               # 格式化器模块
+│   │   ├── __init__.py
+│   │   ├── base_formatter.py         # 格式化器基类
+│   │   ├── page_formatter.py         # 页面格式化器
+│   │   ├── paragraph_formatter.py    # 段落格式化器
+│   │   ├── document_title_formatter.py # 文档标题格式化器
+│   │   ├── table_formatter.py        # 表格格式化器
+│   │   ├── list_formatter.py         # 列表格式化器
+│   │   └── image_formatter.py        # 图片格式化器
+│   ├── utils/                    # 工具模块
+│   │   ├── __init__.py
+│   │   ├── xpath_cache.py           # XPath查询优化器
+│   │   ├── constants.py             # 常量定义
+│   │   └── exceptions.py            # 异常类型定义
+│   └── config/                   # 配置模块
+│       ├── __init__.py
+│       └── config.py                # 公文格式配置
+├── filters/                      # Pandoc过滤器
+│   └── chinese_filter.lua           # 中文处理过滤器
+├── examples/                     # 示例文件
+│   ├── *.md                         # 示例Markdown文件
+│   └── *.docx                       # 转换结果示例
+├── md_to_word.py                # 主程序入口
+├── requirements.txt             # Python依赖列表
+├── README.md                    # 使用说明（本文件）
+└── CLAUDE.md                    # 项目开发记录
 ```
 
 ## 支持的输入格式
@@ -264,7 +282,11 @@ md-to-word/
 ## 技术架构
 
 - **转换引擎**：Pandoc（专业文档转换）
-- **架构设计**：模块化组件，专业格式化器类集合
+- **架构设计**：模块化组件架构，职责分离
+  - **核心层**（src/core/）：预处理、Pandoc集成、后处理控制
+  - **格式化层**（src/formatters/）：专业格式化器类，单一职责
+  - **工具层**（src/utils/）：缓存优化、常量定义、异常处理
+  - **配置层**（src/config/）：格式配置管理
 - **性能优化**：批量处理、XPath缓存、预编译正则表达式
 - **数学公式**：MathML渲染（原生Word公式）
 - **表格处理**：Pandoc原生转换 + 智能格式优化
@@ -283,25 +305,31 @@ md-to-word/
 
 ## 版本信息
 
-- **当前版本**：2.1.0
-- **更新日期**：2025年7月22日
-- **最新优化**：
-  - 消除功能冗余，优化代码结构
-  - 重构caption处理逻辑，提高可维护性
-  - 保留必要的列表格式处理功能
-  - 简化后处理流程，每个环节职责更明确
+- **当前版本**：2.2.0
+- **更新日期**：2025年7月23日
+- **最新更新（v2.2.0）**：
+  - **🏗️ 完成模块化重构**：将大型文件拆分为专门的模块
+  - **📁 优化项目结构**：采用标准的Python包结构组织
+  - **🔧 改进代码组织**：每个格式化器独立成模块，职责分离更清晰
+  - **⚡ 提升可维护性**：更好的代码定位和调试体验
+  - **🧹 清理项目文件**：移除重复文件，整理目录结构
 - **核心功能**：
   - 完整的LaTeX公式、表格和列表支持
   - 智能图片处理和caption格式化
   - 模块化架构设计，性能优化
 
-## 性能优化特性
+## 架构优化特性
 
-- **模块化架构**：拆分为6个专门的格式化器类，职责分离
-- **批量处理**：减少DOM遍历次数，提升处理效率
-- **缓存机制**：XPath查询结果缓存，避免重复计算
-- **预编译模式**：正则表达式预编译，减少运行时开销
-- **安全增强**：路径遍历防护，XML注入防护，异常处理优化
+- **🏗️ 模块化设计**：
+  - 拆分为7个专门的格式化器类（1164行→平均165行/模块）
+  - 4层架构：核心层、格式化层、工具层、配置层
+  - 清晰的职责分离和依赖关系
+- **⚡ 性能优化**：
+  - 批量处理：减少DOM遍历次数，提升处理效率
+  - 缓存机制：XPath查询结果缓存，避免重复计算
+  - 预编译模式：正则表达式预编译，减少运行时开销
+- **🔒 安全增强**：路径遍历防护，XML注入防护，异常处理优化
+- **🛠️ 开发体验**：更好的IDE支持，更快的文件加载，更容易的单元测试
 
 ## 问题反馈
 

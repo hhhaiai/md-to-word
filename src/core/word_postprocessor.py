@@ -5,9 +5,9 @@ from typing import Dict, Any, List
 import os
 import re
 
-from config import DocumentConfig
-from constants import Patterns
-from formatters import (
+from ..config.config import DocumentConfig
+from ..utils.constants import Patterns
+from ..formatters import (
     PageFormatter, 
     ParagraphFormatter, 
     DocumentTitleFormatter, 

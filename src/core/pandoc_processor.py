@@ -5,8 +5,8 @@ import shutil
 from pathlib import Path
 from typing import Dict, Any, Optional
 from docx import Document
-from config import DocumentConfig
-from exceptions import PandocError
+from ..config import DocumentConfig
+from ..utils.exceptions import PandocError
 
 class PandocProcessor:
     """使用Pandoc进行Markdown到Word的转换处理器"""

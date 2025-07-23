@@ -3,9 +3,9 @@ import os
 import shutil
 from typing import List, Dict, Any
 from pathlib import Path
-from config import DocumentConfig
-from constants import Patterns, DocumentFormats
-from exceptions import FileProcessingError, MarkdownParsingError, PathSecurityError
+from ..config import DocumentConfig
+from ..utils.constants import Patterns, DocumentFormats
+from ..utils.exceptions import FileProcessingError, MarkdownParsingError, PathSecurityError
 
 class MarkdownPreprocessor:
     """Markdown预处理器，用于清理和过滤Markdown内容后交给pandoc处理"""

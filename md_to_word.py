@@ -4,10 +4,10 @@ import os
 import sys
 from pathlib import Path
 
-from markdown_preprocessor import MarkdownPreprocessor
-from pandoc_processor import PandocProcessor
-from word_postprocessor import WordPostprocessor
-from exceptions import FileProcessingError, PandocError
+from src.core.markdown_preprocessor import MarkdownPreprocessor
+from src.core.pandoc_processor import PandocProcessor
+from src.core.word_postprocessor import WordPostprocessor
+from src.utils.exceptions import FileProcessingError, PandocError
 
 def main():
     """主程序入口"""
