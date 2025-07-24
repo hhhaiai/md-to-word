@@ -64,6 +64,10 @@ class WordPostprocessor:
         
         # 使用专门的格式化器处理不同方面的格式化
         self.page_formatter.setup_page_format(self.doc)
+        
+        # 不再需要清理特殊标记，HTML 标签会被 Pandoc 正确处理
+        # self._clean_zero_width_spaces()
+        
         self.paragraph_formatter.format_document_content(self.doc, metadata)
         
         # 添加文档标题（如果有）
@@ -449,4 +453,14 @@ class WordPostprocessor:
             pass  # 静默处理属性错误
         except Exception as e:
             pass  # 静默处理其他错误
+    
+    def _clean_zero_width_spaces(self):
+        """清理用于保护编号的特殊标记"""
+        for paragraph in self.doc.paragraphs:
+            # 检查段落文本中是否包含 {{}} 标记
+            if '{{' in paragraph.text and '}}' in paragraph.text:
+                for run in paragraph.runs:
+                    if '{{' in run.text or '}}' in run.text:
+                        # 移除特殊标记
+                        run.text = run.text.replace('{{', '').replace('}}', '')
     

@@ -48,11 +48,12 @@ class MarkdownPreprocessor:
         lines = self._filter_ending_metadata(lines)
         lines = self._remove_bold_formatting(lines)
         lines = self._reposition_captions(lines)  # 在合并行之前重新定位标题
-        lines = self._remove_numbered_list_spaces(lines)
+        # 注释掉这一行，不再去除有序列表的空格
+        # lines = self._remove_numbered_list_spaces(lines)
         lines = self._fix_unordered_list_asterisks(lines)
         lines = self._merge_broken_lines(lines)
         lines = self._skip_first_level_headers(lines)
-        lines = self._process_isolated_numbered_items(lines)  # 处理孤立的编号项
+        lines = self._convert_ordered_lists_to_text(lines)  # 将所有有序列表转换为正文
         
         # 重新组合内容
         processed_content = '\n'.join(lines)
@@ -267,6 +268,13 @@ class MarkdownPreprocessor:
                         else:
                             # 三级及更深的标题：作为正文处理，移除标题标记
                             content = stripped_line[space_index + 1:]  # 获取标题内容
+                            # 检查是否是多级编号格式，如果是，需要保护
+                            multi_match = re.match(r'^(\d+\.\d+(?:\.\d+)*)\s+(.+)$', content)
+                            if multi_match:
+                                # 是多级编号，使用反引号包裹
+                                numbering = multi_match.group(1)
+                                text = multi_match.group(2)
+                                content = f"`{numbering}` {text}"
                             new_line = indent + content
                             processed_lines.append(new_line)
                         continue
@@ -423,87 +431,38 @@ class MarkdownPreprocessor:
         
         return end_index
     
-    def _process_isolated_numbered_items(self, lines: List[str]) -> List[str]:
-        """处理孤立的编号项，避免被误识别为列表
+    def _convert_ordered_lists_to_text(self, lines: List[str]) -> List[str]:
+        """将所有有序列表和多级编号转换为正文格式
         
         规则：
-        1. 连续的编号项（1. 2. 3.）保持为列表
-        2. 孤立的编号项或编号之间有其他内容的，转换为正文格式
+        1. 所有形如 '1. 内容' 的有序列表都转换为正文
+        2. 所有形如 '2.1.1 内容' 的多级编号也转换为正文
+        3. 使用特殊标记包裹编号，完全阻止 Pandoc 识别
         """
         processed_lines = []
-        i = 0
         
-        while i < len(lines):
-            line = lines[i]
-            stripped = line.strip()
-            
-            # 检查是否为编号项
-            # 需要区分两种情况：
-            # 1. 多级编号（如 "2.1.1 xxx"）- 最后没有点
-            # 2. 简单编号（如 "1. xxx" 或 "1.xxx"）- 最后有点
-            
-            # 先尝试匹配多级编号（不以点结尾）
-            multi_match = re.match(r'^(\d+\.\d+(?:\.\d+)*)\s+(.+)$', stripped)
+        for line in lines:
+            # 先匹配多级编号格式（如 2.1.1 内容）
+            multi_match = re.match(r'^(\s*)(\d+\.\d+(?:\.\d+)*)\s+(.+)$', line)
             if multi_match:
-                # 是多级编号，直接当作正文处理（已经被_adjust_header_levels处理过）
-                processed_lines.append(line)
-                i += 1
-                continue
-            
-            # 再匹配简单编号（以点结尾）
-            match = re.match(r'^(\d+)\.\s*(.+)$', stripped)
-            if match:
-                # 检查是否为连续列表的一部分
-                if self._is_part_of_continuous_list(lines, i):
-                    # 是连续列表的一部分，保持原样
-                    processed_lines.append(line)
-                else:
-                    # 是孤立的编号项，转换为加粗文本以避免被识别为列表
-                    number = match.group(1)
-                    content = match.group(2).strip()  # 去除内容前的空格
-                    indent = line[:len(line) - len(line.lstrip())]
-                    # 使用加粗格式包装整个编号项
-                    new_line = f"{indent}**{number}. {content}**"
-                    processed_lines.append(new_line)
+                indent = multi_match.group(1)
+                numbering = multi_match.group(2)
+                content = multi_match.group(3)
+                # 使用反引号（inline code）包裹整个编号，阻止 Pandoc 识别为列表
+                new_line = f"{indent}`{numbering}` {content}"
+                processed_lines.append(new_line)
             else:
-                processed_lines.append(line)
-            
-            i += 1
+                # 再匹配简单有序列表格式（数字 + 点 + 空格）
+                simple_match = re.match(r'^(\s*)(\d+)\.\s+(.+)$', line)
+                if simple_match:
+                    indent = simple_match.group(1)
+                    number = simple_match.group(2)
+                    content = simple_match.group(3)
+                    # 使用反引号包裹
+                    new_line = f"{indent}`{number}.` {content}"
+                    processed_lines.append(new_line)
+                else:
+                    processed_lines.append(line)
         
         return processed_lines
     
-    def _is_part_of_continuous_list(self, lines: List[str], current_index: int) -> bool:
-        """判断当前编号项是否为连续列表的一部分
-        
-        连续列表的定义：
-        - 前一行或后一行也是编号项
-        - 编号是连续的（如 1. 2. 3.）
-        - 中间没有其他非空内容
-        """
-        current_match = re.match(r'^(\d+)\.', lines[current_index].strip())
-        if not current_match:
-            return False
-        
-        current_num = int(current_match.group(1))
-        
-        # 检查前一个非空行
-        prev_index = current_index - 1
-        while prev_index >= 0 and not lines[prev_index].strip():
-            prev_index -= 1
-        
-        if prev_index >= 0:
-            prev_match = re.match(r'^(\d+)\.', lines[prev_index].strip())
-            if prev_match and int(prev_match.group(1)) == current_num - 1:
-                return True
-        
-        # 检查后一个非空行
-        next_index = current_index + 1
-        while next_index < len(lines) and not lines[next_index].strip():
-            next_index += 1
-        
-        if next_index < len(lines):
-            next_match = re.match(r'^(\d+)\.', lines[next_index].strip())
-            if next_match and int(next_match.group(1)) == current_num + 1:
-                return True
-        
-        return False
