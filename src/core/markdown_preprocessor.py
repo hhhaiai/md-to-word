@@ -47,13 +47,11 @@ class MarkdownPreprocessor:
         lines = self._filter_yaml_frontmatter(lines)
         lines = self._filter_ending_metadata(lines)
         lines = self._remove_bold_formatting(lines)
-        lines = self._reposition_captions(lines)  # 在合并行之前重新定位标题
-        # 注释掉这一行，不再去除有序列表的空格
-        # lines = self._remove_numbered_list_spaces(lines)
+        lines = self._reposition_captions(lines)
         lines = self._fix_unordered_list_asterisks(lines)
         lines = self._merge_broken_lines(lines)
         lines = self._skip_first_level_headers(lines)
-        lines = self._convert_ordered_lists_to_text(lines)  # 将所有有序列表转换为正文
+        lines = self._convert_ordered_lists_to_text(lines)
         
         # 重新组合内容
         processed_content = '\n'.join(lines)
@@ -75,8 +73,6 @@ class MarkdownPreprocessor:
                 metadata['attachments'].append(line)
         
         return metadata
-    
-
     
     def _filter_yaml_frontmatter(self, lines: List[str]) -> List[str]:
         """过滤YAML front matter"""
@@ -284,19 +280,6 @@ class MarkdownPreprocessor:
         
         return processed_lines
     
-    def _remove_numbered_list_spaces(self, lines: List[str]) -> List[str]:
-        """去除简单数字列表项中的空格，如将'1. '转换为'1.'
-        但保留多级编号的格式，如 '2.1.1 xxx' 保持不变
-        """
-        processed_lines = []
-        
-        for line in lines:
-            # 只匹配简单的一级编号（如 "1. "、"2. " 等）
-            # 不匹配多级编号（如 "1.1 "、"2.1.1 " 等）
-            processed_line = re.sub(r'^(\s*)(\d+)\.\s+(?!\d)', r'\1\2.', line)
-            processed_lines.append(processed_line)
-        
-        return processed_lines
     
     def _fix_unordered_list_asterisks(self, lines: List[str]) -> List[str]:
         """修复无序列表的星号，避免被误识别为斜体"""

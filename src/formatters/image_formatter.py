@@ -61,9 +61,8 @@ class ImageFormatter(BaseFormatter):
             if self.config.PANDOC_CONFIG.get('image_wrap_text', False):
                 self._set_image_wrap(drawing_element)
                 
-        except Exception as e:
-            # 单个图片格式化失败不应中断整个处理流程
-            pass  # 静默处理错误
+        except Exception:
+            pass
     
     def _remove_image_name(self, drawing_element):
         """移除图片的文件名显示 - 使用优化的批量处理"""
@@ -116,8 +115,8 @@ class ImageFormatter(BaseFormatter):
         except (AttributeError, KeyError) as e:
             # XML结构访问错误，记录但不中断
             pass  # 静默处理结构错误
-        except Exception as e:
-            pass  # 静默处理错误
+        except Exception:
+            pass
     
     def _remove_image_captions_from_all_paragraphs(self, doc: Document):
         """扫描所有段落，移除图片文件名文本（不依赖绘制元素）"""
@@ -169,8 +168,8 @@ class ImageFormatter(BaseFormatter):
                             if modified_text != original_text:
                                 run.text = modified_text.strip()
                                 
-        except Exception as e:
-            pass  # 静默处理错误
+        except Exception:
+            pass
     
     def _format_all_image_captions(self, doc: Document):
         """格式化所有图片标题段落（包括Pandoc生成的"Image Caption"样式）"""
@@ -190,8 +189,8 @@ class ImageFormatter(BaseFormatter):
                 if text and Patterns.IMAGE_CAPTION_PATTERN.match(text):
                     self._format_image_caption(paragraph)
                     
-        except Exception as e:
-            pass  # 静默处理错误
+        except Exception:
+            pass
     
     def _remove_empty_paragraphs_after_image_cleanup(self, doc: Document):
         """移除因删除图片标题而产生的空白段落"""
@@ -214,8 +213,8 @@ class ImageFormatter(BaseFormatter):
                 if parent is not None:
                     parent.remove(paragraph_element)
                     
-        except Exception as e:
-            pass  # 静默处理错误
+        except Exception:
+            pass
     
     def _is_effectively_empty_paragraph(self, paragraph) -> bool:
         """检查段落是否实际为空（没有文本内容或只有空白）"""
@@ -257,8 +256,6 @@ class ImageFormatter(BaseFormatter):
             if not self.config.PANDOC_CONFIG.get('image_wrap_text', False):
                 return
                 
-            # wrap_type = self.config.PANDOC_CONFIG.get('image_wrap_type', 'topAndBottom')  # Currently only topAndBottom is supported
-            
             # 使用优化的批量查询获取所有图片相关元素
             elements = self.xml_processor.process_image_properties(drawing_element)
             
@@ -289,12 +286,8 @@ class ImageFormatter(BaseFormatter):
                     # 替换inline元素
                     parent.replace(inline, anchor)
                     
-        except (AttributeError, KeyError) as e:
-            pass  # 静默处理结构错误
-            # 如果出错，保持原有的inline格式
-        except Exception as e:
-            pass  # 静默处理错误
-            # 如果出错，保持原有的inline格式
+        except (AttributeError, KeyError, Exception):
+            pass
     
     def _create_anchor_element(self, cx: str, cy: str, docPr_id: str, docPr_name: str):
         """
@@ -395,14 +388,7 @@ class ImageFormatter(BaseFormatter):
             
             return anchor
             
-        except XMLProcessingError as e:
-            pass  # 静默处理XML错误
-            # 返回简单的anchor元素作为后备
-            fallback_anchor = OxmlElement('wp:anchor')
-            return fallback_anchor
-        except Exception as e:
-            pass  # 静默处理错误
-            # 返回简单的anchor元素作为后备
+        except (XMLProcessingError, Exception):
             fallback_anchor = OxmlElement('wp:anchor')
             return fallback_anchor
     
@@ -432,10 +418,8 @@ class ImageFormatter(BaseFormatter):
             for paragraph in paragraphs_to_remove:
                 self._remove_paragraph(paragraph)
                 
-        except (AttributeError, IndexError) as e:
-            pass  # 静默处理文档结构错误
-        except Exception as e:
-            pass  # 静默处理错误
+        except (AttributeError, IndexError, Exception):
+            pass
     
     def _is_image_caption(self, text: str) -> bool:
         """判断是否为需要移除的图片文件名文本"""
@@ -469,10 +453,8 @@ class ImageFormatter(BaseFormatter):
             paragraph_format.space_before = Pt(0)
             paragraph_format.first_line_indent = Pt(0)  # 图片标题不缩进
             
-        except AttributeError as e:
-            pass  # 静默处理属性错误
-        except Exception as e:
-            pass  # 静默处理错误
+        except (AttributeError, Exception):
+            pass
     
     def _remove_paragraph(self, paragraph):
         """安全地移除段落"""
@@ -480,7 +462,5 @@ class ImageFormatter(BaseFormatter):
             p = paragraph._element
             p.getparent().remove(p)
             paragraph._element = None
-        except (AttributeError, ValueError) as e:
-            pass  # 静默处理结构错误
-        except Exception as e:
-            pass  # 静默处理错误
+        except (AttributeError, ValueError, Exception):
+            pass

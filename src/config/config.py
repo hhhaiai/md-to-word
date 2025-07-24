@@ -31,8 +31,6 @@ class DocumentConfig:
         'header': Pt(16)        # 三号 - 发文字号
     }
     
-    # 行距配置已废弃，现在通过文档网格控制行距
-    
     # 版心配置
     CHARS_PER_LINE = 28         # 每行字符数
     LINES_PER_PAGE = 22         # 每页行数

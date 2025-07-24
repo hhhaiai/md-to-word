@@ -36,10 +36,6 @@ class ListFormatter(BaseFormatter):
         if self._is_word_list_item(paragraph):
             return 'word_list'
         
-        # 不再处理有序列表，因为在预处理阶段已经全部转换为正文
-        # if Patterns.ORDERED_LIST_PATTERN.match(paragraph.text.strip()):
-        #     return 'ordered_list'
-            
         return 'none'
     
     def _is_word_list_item(self, paragraph) -> bool:
