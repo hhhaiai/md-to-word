@@ -441,9 +441,8 @@ class WordPostprocessor:
             # 设置段落格式 - 表格caption居中显示
             paragraph.alignment = self.config.ALIGNMENTS['center']
             paragraph_format = paragraph.paragraph_format
-            paragraph_format.line_spacing = self.config.LINE_SPACING
-            paragraph_format.space_after = Pt(6)
-            paragraph_format.space_before = Pt(3)
+            paragraph_format.space_after = Pt(0)
+            paragraph_format.space_before = Pt(0)
             paragraph_format.first_line_indent = Pt(0)  # caption不缩进
             
         except AttributeError as e:

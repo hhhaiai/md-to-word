@@ -23,6 +23,14 @@ class DocumentTitleFormatter(BaseFormatter):
         # 设置中文字体
         self._set_chinese_font(run, self.config.FONTS['xiaobiaosong'])
         
+        # 设置段落格式，确保与网格对齐
+        paragraph_format = title_paragraph.paragraph_format
+        paragraph_format.space_before = Pt(0)
+        paragraph_format.space_after = Pt(0)
+        
+        # 启用文档网格对齐
+        self._enable_snap_to_grid(title_paragraph)
+        
         # 添加空行
         doc.paragraphs[1].insert_paragraph_before()
     
@@ -40,5 +48,22 @@ class DocumentTitleFormatter(BaseFormatter):
         # 设置段落格式
         paragraph_format = paragraph.paragraph_format
         paragraph_format.first_line_indent = self.config.FIRST_LINE_INDENT
-        paragraph_format.line_spacing = self.config.LINE_SPACING
+        paragraph_format.space_before = Pt(0)
         paragraph_format.space_after = Pt(0)
+        
+        # 启用文档网格对齐
+        self._enable_snap_to_grid(paragraph)
+    
+    def _enable_snap_to_grid(self, paragraph):
+        """启用段落的文档网格对齐"""
+        from docx.oxml.ns import qn as qn_func
+        from docx.oxml.shared import OxmlElement
+        
+        pPr = paragraph._element.get_or_add_pPr()
+        
+        # 检查是否已有snapToGrid元素
+        snapToGrid = pPr.find(qn_func('w:snapToGrid'))
+        if snapToGrid is None:
+            # 创建新的snapToGrid元素
+            snapToGrid = OxmlElement('w:snapToGrid')
+            pPr.append(snapToGrid)

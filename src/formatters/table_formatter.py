@@ -107,9 +107,8 @@ class TableFormatter(BaseFormatter):
                         # 设置单元格段落格式
                         paragraph.alignment = self.config.ALIGNMENTS['center']  # 表格内容居中
                         paragraph_format = paragraph.paragraph_format
-                        paragraph_format.line_spacing = self.config.LINE_SPACING
-                        paragraph_format.space_before = Pt(3)
-                        paragraph_format.space_after = Pt(3)
+                        paragraph_format.space_before = Pt(0)
+                        paragraph_format.space_after = Pt(0)
     
     def _apply_three_line_table_style(self, table):
         """应用三线表样式 - 清除默认边框"""

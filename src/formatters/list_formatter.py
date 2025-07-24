@@ -81,6 +81,9 @@ class ListFormatter(BaseFormatter):
         paragraph_format.space_after = Pt(0)
         paragraph_format.space_before = Pt(0)
         paragraph.alignment = self.config.ALIGNMENTS['justify']
+        
+        # 启用文档网格对齐
+        self._enable_snap_to_grid(paragraph)
     
     def _apply_main_item_format(self, paragraph):
         """应用一级列表格式"""
@@ -90,6 +93,9 @@ class ListFormatter(BaseFormatter):
         paragraph_format.space_after = Pt(0)
         paragraph_format.space_before = Pt(0)
         paragraph.alignment = self.config.ALIGNMENTS['justify']
+        
+        # 启用文档网格对齐
+        self._enable_snap_to_grid(paragraph)
     
     def _apply_list_font_format(self, paragraph):
         """应用列表字体格式"""
@@ -191,3 +197,19 @@ class ListFormatter(BaseFormatter):
         paragraph_format.space_after = Pt(0)
         paragraph_format.space_before = Pt(0)
         paragraph.alignment = self.config.ALIGNMENTS['justify']
+        
+        # 启用文档网格对齐
+        self._enable_snap_to_grid(paragraph)
+    def _enable_snap_to_grid(self, paragraph):
+        """启用段落的文档网格对齐"""
+        from docx.oxml.ns import qn as qn_func
+        from docx.oxml.shared import OxmlElement
+        
+        pPr = paragraph._element.get_or_add_pPr()
+        
+        # 检查是否已有snapToGrid元素
+        snapToGrid = pPr.find(qn_func("w:snapToGrid"))
+        if snapToGrid is None:
+            # 创建新的snapToGrid元素
+            snapToGrid = OxmlElement("w:snapToGrid")
+            pPr.append(snapToGrid)

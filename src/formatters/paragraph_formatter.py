@@ -44,6 +44,11 @@ class ParagraphFormatter(BaseFormatter):
         text = paragraph.text.strip()
         level = self._get_heading_level(paragraph, text)
         
+        # 如果不是一级或二级标题，按正文处理
+        if level == 0:
+            self._format_body_paragraph(paragraph)
+            return
+        
         # 检查是否包含数学公式（通过检查XML元素）
         if self._has_math_formula(paragraph):
             # 如果包含数学公式，只修改字体格式，不清除内容
@@ -67,7 +72,7 @@ class ParagraphFormatter(BaseFormatter):
             # 设置字体颜色为黑色
             run.font.color.rgb = RGBColor(0, 0, 0)
             self._set_chinese_font(run, self.config.FONTS['heiti'])
-        elif level == 2:
+        else:
             # 二级标题：楷体，三号，不加粗
             run.font.name = self.config.FONTS['kaiti']
             run.font.size = self.config.FONT_SIZES['body']
@@ -75,50 +80,36 @@ class ParagraphFormatter(BaseFormatter):
             # 设置字体颜色为黑色
             run.font.color.rgb = RGBColor(0, 0, 0)
             self._set_chinese_font(run, self.config.FONTS['kaiti'])
-        else:
-            # 三级及以下标题：仿宋，三号，不加粗
-            run.font.name = self.config.FONTS['fangsong']
-            run.font.size = self.config.FONT_SIZES['body']
-            run.bold = False
-            # 设置字体颜色为黑色
-            run.font.color.rgb = RGBColor(0, 0, 0)
-            self._set_chinese_font(run, self.config.FONTS['fangsong'])
         
         # 设置段落格式
         paragraph.alignment = self.config.ALIGNMENTS['justify']
         paragraph_format = paragraph.paragraph_format
         paragraph_format.first_line_indent = self.config.FIRST_LINE_INDENT
-        paragraph_format.line_spacing = self.config.LINE_SPACING
-        paragraph_format.space_after = Pt(6)
-        paragraph_format.space_before = Pt(6)
+        # GB/T 9704-2012要求：不使用段前段后间距，所有内容锁定在文档网格内
+        paragraph_format.space_after = Pt(0)
+        paragraph_format.space_before = Pt(0)
+        
+        # 启用文档网格对齐
+        self._enable_snap_to_grid(paragraph)
     
     def _get_heading_level(self, paragraph, text: str) -> int:
-        """获取标题级别"""
-        # 检查Word内置标题样式 - pandoc生成的样式映射（修正版）
-        # 因为pandoc将#作为Heading 1，我们跳过#，所以：
-        # ## → Heading 2 → 应该是我们的一级标题（黑体）
-        # ### → Heading 3 → 应该是我们的二级标题（楷体）  
-        # #### → Heading 4 → 应该是我们的三级标题（仿宋）
+        """获取标题级别（只处理一级和二级标题）"""
+        # 检查Word内置标题样式
         if paragraph.style.name == 'Heading 1':
             return 1  # # → 黑体 (但我们通常跳过这个)
         elif paragraph.style.name == 'Heading 2':
             return 1  # ## → 黑体
         elif paragraph.style.name == 'Heading 3':
             return 2  # ### → 楷体
-        elif paragraph.style.name == 'Heading 4':
-            return 3  # #### → 仿宋
-        elif paragraph.style.name == 'Heading 5':
-            return 3  # ##### → 仿宋 (fallback)
         
         # 根据文本内容判断级别（处理中文标题格式）
         if Patterns.HEADING_PATTERNS[0].match(text):
             return 1  # 一、二、三、 → 黑体
         elif Patterns.HEADING_PATTERNS[1].match(text):
             return 2  # （一）（二）（三） → 楷体
-        elif Patterns.HEADING_PATTERNS[2].match(text) or Patterns.HEADING_PATTERNS[3].match(text):
-            return 3  # 1. 2. 3. 或 1、2、3、 → 仿宋
         
-        return 3  # 默认三级标题
+        # 其他情况返回0，表示不是标题
+        return 0
     
     def _format_body_paragraph(self, paragraph):
         """格式化正文段落"""
@@ -138,9 +129,11 @@ class ParagraphFormatter(BaseFormatter):
         paragraph.alignment = self.config.ALIGNMENTS['justify']
         paragraph_format = paragraph.paragraph_format
         paragraph_format.first_line_indent = self.config.FIRST_LINE_INDENT
-        paragraph_format.line_spacing = self.config.LINE_SPACING
         paragraph_format.space_after = Pt(0)
         paragraph_format.space_before = Pt(0)
+        
+        # 启用文档网格对齐
+        self._enable_snap_to_grid(paragraph)
     
     def _format_paragraph_with_math(self, paragraph, level: int, is_heading: bool):
         """格式化包含数学公式的段落，保留数学公式内容"""
@@ -148,16 +141,13 @@ class ParagraphFormatter(BaseFormatter):
         paragraph.alignment = self.config.ALIGNMENTS['justify']
         paragraph_format = paragraph.paragraph_format
         
-        if is_heading:
-            paragraph_format.first_line_indent = self.config.FIRST_LINE_INDENT
-            paragraph_format.space_after = Pt(6)
-            paragraph_format.space_before = Pt(6)
-        else:
-            paragraph_format.first_line_indent = self.config.FIRST_LINE_INDENT
-            paragraph_format.space_after = Pt(0)
-            paragraph_format.space_before = Pt(0)
+        # 设置段落格式
+        paragraph_format.first_line_indent = self.config.FIRST_LINE_INDENT
+        paragraph_format.space_after = Pt(0)
+        paragraph_format.space_before = Pt(0)
         
-        paragraph_format.line_spacing = self.config.LINE_SPACING
+        # 启用文档网格对齐
+        self._enable_snap_to_grid(paragraph)
         
         # 只格式化文本run，跳过数学公式
         for run in paragraph.runs:
@@ -165,17 +155,14 @@ class ParagraphFormatter(BaseFormatter):
                 try:
                     # 检查run的XML内容，只处理不包含数学内容的run
                     if 'oMath' not in run._element.xml:
-                        if is_heading:
-                            # 根据标题级别设置字体
+                        if is_heading and level > 0:
+                            # 根据标题级别设置字体（只处理一级和二级标题）
                             if level == 1:
                                 run.font.name = self.config.FONTS['heiti']
                                 self._set_chinese_font(run, self.config.FONTS['heiti'])
-                            elif level == 2:
+                            else:  # level == 2
                                 run.font.name = self.config.FONTS['kaiti']
                                 self._set_chinese_font(run, self.config.FONTS['kaiti'])
-                            else:
-                                run.font.name = self.config.FONTS['fangsong']
-                                self._set_chinese_font(run, self.config.FONTS['fangsong'])
                             run.font.size = self.config.FONT_SIZES['body']
                             run.bold = False
                             run.font.color.rgb = RGBColor(0, 0, 0)
@@ -187,3 +174,22 @@ class ParagraphFormatter(BaseFormatter):
                 except:
                     # 如果出错，跳过这个run
                     continue
+    
+    def _enable_snap_to_grid(self, paragraph):
+        """启用段落的文档网格对齐"""
+        from docx.oxml.ns import qn as qn_func
+        from docx.oxml.shared import OxmlElement
+        
+        pPr = paragraph._element.get_or_add_pPr()
+        
+        # 检查是否已有snapToGrid元素
+        snapToGrid = pPr.find(qn_func('w:snapToGrid'))
+        if snapToGrid is None:
+            # 创建新的snapToGrid元素
+            snapToGrid = OxmlElement('w:snapToGrid')
+            pPr.append(snapToGrid)
+        
+        # 设置为启用（默认值为true，所以只要存在这个元素就表示启用）
+        # 如果要禁用，需要设置val="false"
+        # snapToGrid.set(qn_func('w:val'), 'false')  # 禁用
+        # 不设置val属性或设置为true都表示启用

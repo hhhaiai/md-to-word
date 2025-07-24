@@ -19,7 +19,7 @@ class DocumentConfig:
         'fangsong': 'FangSong',      # 正文字体
         'xiaobiaosong': 'FZXiaoBiaoSong-B05S',      # 标题字体
         'heiti': 'SimHei',               # 一级标题
-        'kaiti': 'Kaiti SC'            # 二级标题
+        'kaiti': 'Kai'            # 二级标题
     }
     
     # 字号配置 (单位: 磅)
@@ -31,8 +31,7 @@ class DocumentConfig:
         'header': Pt(16)        # 三号 - 发文字号
     }
     
-    # 行距配置
-    LINE_SPACING = Pt(26.5)     # 固定值25.5磅
+    # 行距配置已废弃，现在通过文档网格控制行距
     
     # 版心配置
     CHARS_PER_LINE = 28         # 每行字符数
