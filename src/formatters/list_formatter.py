@@ -19,6 +19,10 @@ class ListFormatter(BaseFormatter):
     def format_lists(self, doc: Document):
         """格式化列表 - 保留Word列表格式，只调整缩进和字体"""
         for paragraph in doc.paragraphs:
+            # 跳过标题段落，避免将包含数字的标题误判为列表
+            if paragraph.style.name.startswith('Heading'):
+                continue
+                
             list_type = self._detect_list_type(paragraph)
             
             if list_type == 'word_list':

@@ -52,6 +52,7 @@ class MarkdownPreprocessor:
         lines = self._fix_unordered_list_asterisks(lines)
         lines = self._merge_broken_lines(lines)
         lines = self._skip_first_level_headers(lines)
+        lines = self._process_isolated_numbered_items(lines)  # 处理孤立的编号项
         
         # 重新组合内容
         processed_content = '\n'.join(lines)
@@ -212,25 +213,79 @@ class MarkdownPreprocessor:
                 ('$' in line and line.count('$') % 2 == 0))  # 行内公式
     
     def _skip_first_level_headers(self, lines: List[str]) -> List[str]:
-        """跳过一级标题（#），因为我们使用文件名作为文档标题"""
+        """动态检测和调整标题层级
+        - 如果检测到多个一级标题（#），将所有标题层级下移
+        - 如果只有一个或没有一级标题，则跳过一级标题（使用文件名作为文档标题）
+        """
+        # 统计一级标题数量
+        h1_count = 0
+        for line in lines:
+            if line.strip().startswith('# ') and not line.strip().startswith('##'):
+                h1_count += 1
+        
+        # 如果有多个一级标题，调整所有标题层级
+        if h1_count > 1:
+            return self._adjust_header_levels(lines)
+        else:
+            # 原有逻辑：跳过单个一级标题
+            processed_lines = []
+            for line in lines:
+                if line.strip().startswith('# ') and not line.strip().startswith('##'):
+                    continue
+                else:
+                    processed_lines.append(line)
+            return processed_lines
+    
+    def _adjust_header_levels(self, lines: List[str]) -> List[str]:
+        """将标题层级下移一级，但只处理到三级标题
+        # -> ##（Heading 2）
+        ## -> ###（Heading 3） 
+        ### -> 作为正文处理（移除标题标记）
+        #### 及更深 -> 作为正文处理（移除标题标记）
+        """
         processed_lines = []
         
         for line in lines:
-            # 跳过一级标题，但保留二级及以上标题
-            if line.strip().startswith('# ') and not line.strip().startswith('##'):
-                continue
-            else:
-                processed_lines.append(line)
+            stripped_line = line.strip()
+            
+            # 检查是否为标题行
+            if stripped_line.startswith('#'):
+                # 找到第一个空格的位置（标题级别和内容的分隔）
+                space_index = stripped_line.find(' ')
+                if space_index > 0:
+                    # 获取标题级别（#的数量）
+                    header_level = stripped_line[:space_index]
+                    if header_level and all(c == '#' for c in header_level):
+                        level_count = len(header_level)
+                        # 获取原始行的缩进
+                        indent = line[:len(line) - len(line.lstrip())]
+                        
+                        if level_count <= 2:
+                            # 一级和二级标题：下移一级
+                            new_line = indent + '#' + stripped_line
+                            processed_lines.append(new_line)
+                        else:
+                            # 三级及更深的标题：作为正文处理，移除标题标记
+                            content = stripped_line[space_index + 1:]  # 获取标题内容
+                            new_line = indent + content
+                            processed_lines.append(new_line)
+                        continue
+            
+            # 非标题行或无法识别的格式，保持原样
+            processed_lines.append(line)
         
         return processed_lines
     
     def _remove_numbered_list_spaces(self, lines: List[str]) -> List[str]:
-        """去除数字列表项中的空格，如将'1. '转换为'1.'"""
+        """去除简单数字列表项中的空格，如将'1. '转换为'1.'
+        但保留多级编号的格式，如 '2.1.1 xxx' 保持不变
+        """
         processed_lines = []
         
         for line in lines:
-            # 使用正则表达式匹配数字列表格式并去除空格
-            processed_line = re.sub(r'^(\s*)(\d+)\.\s+', r'\1\2.', line)
+            # 只匹配简单的一级编号（如 "1. "、"2. " 等）
+            # 不匹配多级编号（如 "1.1 "、"2.1.1 " 等）
+            processed_line = re.sub(r'^(\s*)(\d+)\.\s+(?!\d)', r'\1\2.', line)
             processed_lines.append(processed_line)
         
         return processed_lines
@@ -367,3 +422,88 @@ class MarkdownPreprocessor:
                 end_index += 1
         
         return end_index
+    
+    def _process_isolated_numbered_items(self, lines: List[str]) -> List[str]:
+        """处理孤立的编号项，避免被误识别为列表
+        
+        规则：
+        1. 连续的编号项（1. 2. 3.）保持为列表
+        2. 孤立的编号项或编号之间有其他内容的，转换为正文格式
+        """
+        processed_lines = []
+        i = 0
+        
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+            
+            # 检查是否为编号项
+            # 需要区分两种情况：
+            # 1. 多级编号（如 "2.1.1 xxx"）- 最后没有点
+            # 2. 简单编号（如 "1. xxx" 或 "1.xxx"）- 最后有点
+            
+            # 先尝试匹配多级编号（不以点结尾）
+            multi_match = re.match(r'^(\d+\.\d+(?:\.\d+)*)\s+(.+)$', stripped)
+            if multi_match:
+                # 是多级编号，直接当作正文处理（已经被_adjust_header_levels处理过）
+                processed_lines.append(line)
+                i += 1
+                continue
+            
+            # 再匹配简单编号（以点结尾）
+            match = re.match(r'^(\d+)\.\s*(.+)$', stripped)
+            if match:
+                # 检查是否为连续列表的一部分
+                if self._is_part_of_continuous_list(lines, i):
+                    # 是连续列表的一部分，保持原样
+                    processed_lines.append(line)
+                else:
+                    # 是孤立的编号项，转换为加粗文本以避免被识别为列表
+                    number = match.group(1)
+                    content = match.group(2).strip()  # 去除内容前的空格
+                    indent = line[:len(line) - len(line.lstrip())]
+                    # 使用加粗格式包装整个编号项
+                    new_line = f"{indent}**{number}. {content}**"
+                    processed_lines.append(new_line)
+            else:
+                processed_lines.append(line)
+            
+            i += 1
+        
+        return processed_lines
+    
+    def _is_part_of_continuous_list(self, lines: List[str], current_index: int) -> bool:
+        """判断当前编号项是否为连续列表的一部分
+        
+        连续列表的定义：
+        - 前一行或后一行也是编号项
+        - 编号是连续的（如 1. 2. 3.）
+        - 中间没有其他非空内容
+        """
+        current_match = re.match(r'^(\d+)\.', lines[current_index].strip())
+        if not current_match:
+            return False
+        
+        current_num = int(current_match.group(1))
+        
+        # 检查前一个非空行
+        prev_index = current_index - 1
+        while prev_index >= 0 and not lines[prev_index].strip():
+            prev_index -= 1
+        
+        if prev_index >= 0:
+            prev_match = re.match(r'^(\d+)\.', lines[prev_index].strip())
+            if prev_match and int(prev_match.group(1)) == current_num - 1:
+                return True
+        
+        # 检查后一个非空行
+        next_index = current_index + 1
+        while next_index < len(lines) and not lines[next_index].strip():
+            next_index += 1
+        
+        if next_index < len(lines):
+            next_match = re.match(r'^(\d+)\.', lines[next_index].strip())
+            if next_match and int(next_match.group(1)) == current_num + 1:
+                return True
+        
+        return False
