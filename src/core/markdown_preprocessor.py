@@ -5,7 +5,7 @@ from typing import List, Dict, Any
 from pathlib import Path
 from ..config import DocumentConfig
 from ..utils.constants import Patterns, DocumentFormats
-from ..utils.exceptions import FileProcessingError, MarkdownParsingError, PathSecurityError
+from ..utils.exceptions import FileProcessingError, PathSecurityError
 
 class MarkdownPreprocessor:
     """Markdown预处理器，用于清理和过滤Markdown内容后交给pandoc处理"""
@@ -20,11 +20,27 @@ class MarkdownPreprocessor:
     
     def preprocess_file(self, file_path: str) -> Dict[str, Any]:
         """预处理Markdown文件，返回处理结果"""
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+        # 验证路径安全性
+        try:
+            safe_path = Path(file_path).resolve()
+            # 确保路径不包含目录遍历
+            if ".." in str(file_path):
+                raise PathSecurityError(f"路径包含不安全的目录遍历: {file_path}")
+        except Exception as e:
+            raise PathSecurityError(f"无效的文件路径: {file_path}")
+        
+        try:
+            with open(safe_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except FileNotFoundError:
+            raise FileProcessingError(f"文件不存在: {safe_path}")
+        except PermissionError:
+            raise FileProcessingError(f"没有权限读取文件: {safe_path}")
+        except Exception as e:
+            raise FileProcessingError(f"读取文件时出错: {e}")
         
         # 获取文件名作为标题（去掉扩展名）
-        filename = os.path.basename(file_path)
+        filename = os.path.basename(safe_path)
         title_from_filename = os.path.splitext(filename)[0]
         
         # 预处理内容
@@ -197,7 +213,7 @@ class MarkdownPreprocessor:
             line.startswith('$$'),             # 数学公式开始/结束行
             line.endswith('$$'),               # 数学公式开始/结束行
             Patterns.CAPTION_PATTERN.match(line),  # 图表caption（使用预编译的模式）
-            re.match(r'^\d+\.', line),         # 数字列表项（1. 2. 或 1.内容 等）
+            Patterns.ORDERED_LIST_PATTERN.match(line),  # 数字列表项（1. 2. 或 1.内容 等）
         ]
         
         return any(special_checks)
@@ -265,7 +281,7 @@ class MarkdownPreprocessor:
                             # 三级及更深的标题：作为正文处理，移除标题标记
                             content = stripped_line[space_index + 1:]  # 获取标题内容
                             # 检查是否是多级编号格式，如果是，需要保护
-                            multi_match = re.match(r'^(\d+\.\d+(?:\.\d+)*)\s+(.+)$', content)
+                            multi_match = Patterns.MULTI_LEVEL_NUMBER_PATTERN.match(content)
                             if multi_match:
                                 # 是多级编号，使用反引号包裹
                                 numbering = multi_match.group(1)
@@ -287,9 +303,9 @@ class MarkdownPreprocessor:
         
         for line in lines:
             # 检测无序列表项 (例: "* 项目内容")
-            if re.match(r'^(\s*)\*\s+', line):
+            if Patterns.UNORDERED_LIST_PATTERN.match(line):
                 # 将星号替换为短横线
-                processed_line = re.sub(r'^(\s*)\*\s+', r'\1- ', line)
+                processed_line = Patterns.UNORDERED_LIST_REPLACE_PATTERN.sub(r'\1- ', line)
                 processed_lines.append(processed_line)
             else:
                 processed_lines.append(line)
@@ -426,17 +442,18 @@ class MarkdownPreprocessor:
         
         for line in lines:
             # 先匹配多级编号格式（如 2.1.1 内容）
-            multi_match = re.match(r'^(\s*)(\d+\.\d+(?:\.\d+)*)\s+(.+)$', line)
+            multi_match = Patterns.MULTI_LEVEL_NUMBER_PATTERN.match(line)
             if multi_match:
-                indent = multi_match.group(1)
-                numbering = multi_match.group(2)
-                content = multi_match.group(3)
+                # Group 1 is the numbering (e.g., "2.1.1"), group 2 is the content
+                numbering = multi_match.group(1)
+                content = multi_match.group(2)
+                indent = ''  # Multi-level patterns don't capture indent
                 # 使用反引号（inline code）包裹整个编号，阻止 Pandoc 识别为列表
                 new_line = f"{indent}`{numbering}` {content}"
                 processed_lines.append(new_line)
             else:
                 # 再匹配简单有序列表格式（数字 + 点 + 空格）
-                simple_match = re.match(r'^(\s*)(\d+)\.\s+(.+)$', line)
+                simple_match = Patterns.SIMPLE_ORDERED_LIST_WITH_CONTENT.match(line)
                 if simple_match:
                     indent = simple_match.group(1)
                     number = simple_match.group(2)

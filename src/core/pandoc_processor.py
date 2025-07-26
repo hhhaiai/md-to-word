@@ -1,12 +1,14 @@
-import pypandoc
 import tempfile
 import os
-import shutil
+import subprocess
+import logging
+import shlex
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Optional
 from docx import Document
 from ..config import DocumentConfig
-from ..utils.exceptions import PandocError
+from ..utils.exceptions import PandocError, PathSecurityError
+from ..utils.path_validator import validate_safe_path
 
 class PandocProcessor:
     """使用Pandoc进行Markdown到Word的转换处理器"""
@@ -30,6 +32,9 @@ class PandocProcessor:
         Returns:
             生成的Word文档路径
         """
+        # 验证输出路径安全性
+        safe_output_path = validate_safe_path(output_path)
+        
         try:
             # 创建临时Markdown文件
             with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', 
@@ -51,17 +56,32 @@ class PandocProcessor:
                 pandoc_args.extend(extra_args)
             
             # 使用subprocess直接调用pandoc（确保数学公式正确处理）
-            import subprocess
-            
-            cmd = ['pandoc', temp_md_path, '-t', 'docx', '-o', output_path] + pandoc_args
+            # 使用shlex.quote确保所有参数安全
+            cmd = [
+                'pandoc', 
+                shlex.quote(temp_md_path), 
+                '-t', 'docx', 
+                '-o', shlex.quote(str(safe_output_path))
+            ]
+            # 安全地添加额外参数
+            for arg in pandoc_args:
+                if arg.startswith('--'):
+                    # 对于--开头的参数，分离选项和值
+                    if '=' in arg:
+                        option, value = arg.split('=', 1)
+                        cmd.append(option + '=' + shlex.quote(value))
+                    else:
+                        cmd.append(arg)
+                else:
+                    cmd.append(shlex.quote(arg))
             
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode != 0:
                 raise PandocError(f"Pandoc命令执行失败: {result.stderr}")
             
-            return output_path
+            return str(safe_output_path)
             
-        except pypandoc.PandocError as e:
+        except subprocess.CalledProcessError as e:
             raise PandocError(f"Pandoc转换失败: {e}")
         except OSError as e:
             raise PandocError(f"文件操作失败: {e}")
@@ -95,8 +115,9 @@ class PandocProcessor:
             try:
                 if os.path.exists(temp_file):
                     os.unlink(temp_file)
-            except OSError:
-                pass  # 忽略清理时的文件系统错误
+            except OSError as e:
+                # 记录清理错误但不中断程序
+                logging.debug(f"清理临时文件失败 {temp_file}: {e}")
         self.temp_files.clear()
     
     def load_docx_for_postprocessing(self, docx_path: str) -> Document:
@@ -109,13 +130,20 @@ class PandocProcessor:
         Returns:
             python-docx Document对象
         """
-        return Document(docx_path)
+        # 验证路径安全性
+        safe_path = validate_safe_path(docx_path)
+        
+        try:
+            return Document(safe_path)
+        except Exception as e:
+            raise PandocError(f"无法加载Word文档: {e}")
     
     def check_pandoc_available(self) -> bool:
         """检查pandoc是否可用"""
         try:
-            pypandoc.get_pandoc_version()
-            return True
-        except (OSError, RuntimeError):
+            result = subprocess.run(['pandoc', '--version'], 
+                                  capture_output=True, text=True)
+            return result.returncode == 0
+        except (OSError, FileNotFoundError):
             return False
     

@@ -47,5 +47,25 @@ class BaseFormatter:
                     return True
             
             return False
-        except:
+        except Exception as e:
+            # 记录错误但不中断处理
+            import logging
+            logging.debug(f"检查数学公式时出错: {e}")
             return False
+    
+    def _enable_snap_to_grid(self, paragraph):
+        """启用段落的文档网格对齐"""
+        from docx.oxml.ns import qn as qn_func
+        from docx.oxml.shared import OxmlElement
+        
+        pPr = paragraph._element.get_or_add_pPr()
+        
+        # 检查是否已有snapToGrid元素
+        snapToGrid = pPr.find(qn_func('w:snapToGrid'))
+        if snapToGrid is None:
+            # 创建新的snapToGrid元素
+            snapToGrid = OxmlElement('w:snapToGrid')
+            pPr.append(snapToGrid)
+        
+        # 设置snapToGrid为true（默认值为true，所以只需要元素存在即可）
+        snapToGrid.set(qn_func('w:val'), 'true')

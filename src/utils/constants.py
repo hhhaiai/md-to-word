@@ -19,7 +19,6 @@ class Patterns:
     # 列表相关模式
     ORDERED_LIST_PATTERN = re.compile(r'^\d+\.\s*')          # 匹配有序列表 "1. "
     ORDERED_LIST_PATTERN_PREPROCESSOR = re.compile(r'^\d+\.\s+')  # 预处理器使用的版本（包含空格）
-    ORDERED_LIST_SPLIT_PATTERN = re.compile(r'(\d+\.)')      # 分割有序列表项
     ORDERED_LIST_DOT_REPLACE_PATTERN = re.compile(r'^(\d+)\.\s+')  # 替换点号模式
     
     NUMBERED_LIST_PATTERN = re.compile(r'^(\s*)(\d+)\.\s+')  # 数字列表模式（带缩进）
@@ -30,7 +29,6 @@ class Patterns:
     # 图片相关模式
     MARKDOWN_IMAGE_PATTERN = re.compile(r'!\[([^\]]*)\]\(([^)]+)\)')  # ![alt](url)
     OBSIDIAN_IMAGE_PATTERN = re.compile(r'!\[\[([^\]]+)\]\]')         # ![[filename]]
-    IMAGE_CAPTION_PATTERN = re.compile(r'^图\s*\d+\s*[:：]\s*')       # 图1：内容
     
     # 图片文件名模式
     IMAGE_FILENAME_PATTERNS = [
@@ -54,6 +52,19 @@ class Patterns:
     
     # 图表标题模式 - 匹配 图/图片/表/表格/图表 + 可选空格 + 数字 + 可选空格 + 标点(:：.) + 描述
     CAPTION_PATTERN = re.compile(r'^(图片?|表格?|图表)\s*(\d+)\s*[:：.]\s*(.*)$')
+    CAPTION_PREFIX_PATTERN = re.compile(r'^(图片?|表格?|图表)\s*(\d+)\s*[:：.]\s*')  # 仅匹配前缀部分
+    
+    # 多级编号模式
+    MULTI_LEVEL_NUMBER_PATTERN = re.compile(r'^(\d+\.\d+(?:\.\d+)*)\s+(.+)$')      # 2.1.1 内容
+    SIMPLE_ORDERED_LIST_WITH_CONTENT = re.compile(r'^(\s*)(\d+)\.\s+(.+)$')        # 1. 内容（捕获内容）
+    
+    # 图片语法清理模式
+    OBSIDIAN_IMAGE_CLEANUP_PATTERN = re.compile(r'!\[\[[^\]]+\]\]')                # 清理 ![[filename]]
+    MARKDOWN_IMAGE_CLEANUP_PATTERN = re.compile(r'!\[[^\]]*\]\([^)]+\)')           # 清理 ![alt](path)
+    
+    # 通用文本清理模式
+    WHITESPACE_CLEANUP_PATTERN = re.compile(r'\s+')                                # 清理多余空格
+    PASTED_IMAGE_CLEANUP_PATTERN = re.compile(r'Pasted image \d{14}')              # 清理粘贴图片名称
 
 # 文档格式常量
 class DocumentFormats:

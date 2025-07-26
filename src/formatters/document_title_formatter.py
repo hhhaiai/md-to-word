@@ -18,7 +18,7 @@ class DocumentTitleFormatter(BaseFormatter):
         run = title_paragraph.add_run(title)
         run.font.name = self.config.FONTS['xiaobiaosong']
         run.font.size = self.config.FONT_SIZES['title']
-        run.bold = True
+        run.bold = False
         
         # 设置中文字体
         self._set_chinese_font(run, self.config.FONTS['xiaobiaosong'])
@@ -53,17 +53,3 @@ class DocumentTitleFormatter(BaseFormatter):
         
         # 启用文档网格对齐
         self._enable_snap_to_grid(paragraph)
-    
-    def _enable_snap_to_grid(self, paragraph):
-        """启用段落的文档网格对齐"""
-        from docx.oxml.ns import qn as qn_func
-        from docx.oxml.shared import OxmlElement
-        
-        pPr = paragraph._element.get_or_add_pPr()
-        
-        # 检查是否已有snapToGrid元素
-        snapToGrid = pPr.find(qn_func('w:snapToGrid'))
-        if snapToGrid is None:
-            # 创建新的snapToGrid元素
-            snapToGrid = OxmlElement('w:snapToGrid')
-            pPr.append(snapToGrid)

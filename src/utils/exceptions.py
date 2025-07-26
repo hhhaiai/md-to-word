@@ -8,18 +8,9 @@ class Md2WordError(Exception):
     pass
 
 
-class ConfigurationError(Md2WordError):
-    """配置相关错误"""
-    pass
-
 
 class FileProcessingError(Md2WordError):
     """文件处理相关错误"""
-    pass
-
-
-class MarkdownParsingError(Md2WordError):
-    """Markdown解析相关错误"""
     pass
 
 
@@ -28,23 +19,8 @@ class PandocError(Md2WordError):
     pass
 
 
-class DocumentFormattingError(Md2WordError):
-    """文档格式化相关错误"""
-    pass
-
-
-class ImageProcessingError(DocumentFormattingError):
+class ImageProcessingError(Md2WordError):
     """图片处理相关错误"""
-    pass
-
-
-class TableFormattingError(DocumentFormattingError):
-    """表格格式化相关错误"""
-    pass
-
-
-class ListFormattingError(DocumentFormattingError):
-    """列表格式化相关错误"""
     pass
 
 

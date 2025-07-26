@@ -74,13 +74,12 @@ class TableFormatter(BaseFormatter):
                         row._tr.insert(0, trPr)
                     
                     # 设置行高规则为自动
-                    if self.config.TABLE_CONFIG['row_height_rule'] == 'auto':
-                        trHeight = row_props['trHeight']
-                        if trHeight is None:
-                            trHeight = parse_xml(f'<w:trHeight {nsdecls("w")} w:hRule="auto"/>')
-                            trPr.append(trHeight)
-                        else:
-                            trHeight.set(qn('w:hRule'), 'auto')
+                    trHeight = row_props['trHeight']
+                    if trHeight is None:
+                        trHeight = parse_xml(f'<w:trHeight {nsdecls("w")} w:hRule="auto"/>')
+                        trPr.append(trHeight)
+                    else:
+                        trHeight.set(qn('w:hRule'), 'auto')
                 
                 for cell in row.cells:
                     # 使用优化的单元格属性处理

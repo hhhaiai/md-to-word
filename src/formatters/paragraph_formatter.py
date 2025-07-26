@@ -171,25 +171,8 @@ class ParagraphFormatter(BaseFormatter):
                             run.font.name = self.config.FONTS['fangsong']
                             run.font.size = self.config.FONT_SIZES['body']
                             self._set_chinese_font(run, self.config.FONTS['fangsong'])
-                except:
-                    # 如果出错，跳过这个run
+                except Exception as e:
+                    # 记录错误但不中断处理
+                    import logging
+                    logging.warning(f"处理文本段落字体时出错: {e}")
                     continue
-    
-    def _enable_snap_to_grid(self, paragraph):
-        """启用段落的文档网格对齐"""
-        from docx.oxml.ns import qn as qn_func
-        from docx.oxml.shared import OxmlElement
-        
-        pPr = paragraph._element.get_or_add_pPr()
-        
-        # 检查是否已有snapToGrid元素
-        snapToGrid = pPr.find(qn_func('w:snapToGrid'))
-        if snapToGrid is None:
-            # 创建新的snapToGrid元素
-            snapToGrid = OxmlElement('w:snapToGrid')
-            pPr.append(snapToGrid)
-        
-        # 设置为启用（默认值为true，所以只要存在这个元素就表示启用）
-        # 如果要禁用，需要设置val="false"
-        # snapToGrid.set(qn_func('w:val'), 'false')  # 禁用
-        # 不设置val属性或设置为true都表示启用

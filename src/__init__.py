@@ -13,18 +13,14 @@ from .utils import (
     Patterns, 
     DocumentFormats,
     Md2WordError,
-    ConfigurationError,
     FileProcessingError,
-    MarkdownParsingError, 
     PandocError,
-    DocumentFormattingError,
     ImageProcessingError,
-    TableFormattingError,
-    ListFormattingError,
     XMLProcessingError,
     PathSecurityError,
     XPathCache,
-    OptimizedXMLProcessor
+    OptimizedXMLProcessor,
+    ConfigValidator
 )
 
 __all__ = [
@@ -37,18 +33,16 @@ __all__ = [
     
     # 异常类
     'Md2WordError',
-    'ConfigurationError',
     'FileProcessingError', 
-    'MarkdownParsingError',
     'PandocError',
-    'DocumentFormattingError',
     'ImageProcessingError',
-    'TableFormattingError',
-    'ListFormattingError',
     'XMLProcessingError', 
     'PathSecurityError',
     
     # XML处理工具
     'XPathCache',
-    'OptimizedXMLProcessor'
+    'OptimizedXMLProcessor',
+    
+    # 配置验证
+    'ConfigValidator'
 ]

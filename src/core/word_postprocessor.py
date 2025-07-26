@@ -4,6 +4,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from typing import Dict, Any, List
 import os
 import re
+import logging
 
 from ..config.config import DocumentConfig
 from ..utils.constants import Patterns
@@ -65,9 +66,6 @@ class WordPostprocessor:
         # 使用专门的格式化器处理不同方面的格式化
         self.page_formatter.setup_page_format(self.doc)
         
-        # 不再需要清理特殊标记，HTML 标签会被 Pandoc 正确处理
-        # self._clean_zero_width_spaces()
-        
         self.paragraph_formatter.format_document_content(self.doc, metadata)
         
         # 添加文档标题（如果有）
@@ -110,7 +108,10 @@ class WordPostprocessor:
                     return True
             
             return False
-        except:
+        except Exception as e:
+            # 记录错误但不中断处理
+            import logging
+            logging.debug(f"检查数学公式时出错: {e}")
             return False
     
     # 保留原有的公共方法以维持向后兼容性
@@ -134,12 +135,10 @@ class WordPostprocessor:
         # 初始化已处理的数学caption文本集合
         self._processed_math_caption_texts = set()
         
-        # 定义图片语法模式
-        markdown_image_pattern = re.compile(r'!\[([^\]]*)\]\(([^)]+)\)')
-        obsidian_image_pattern = re.compile(r'!\[\[([^\]]+)\]\]')
-        
-        # 综合的图表标题模式：匹配 图/图片/表/表格/图表 + 可选空格 + 数字 + 可选空格 + 标点(:：.) + 描述
-        caption_pattern = re.compile(r'^(图片?|表格?|图表)\s*(\d+)\s*[:：.]\s*')
+        # 使用预编译的模式
+        markdown_image_pattern = Patterns.MARKDOWN_IMAGE_PATTERN
+        obsidian_image_pattern = Patterns.OBSIDIAN_IMAGE_PATTERN
+        caption_pattern = Patterns.CAPTION_PREFIX_PATTERN
         
         # 图片计数器
         image_counter = 0
@@ -314,19 +313,17 @@ class WordPostprocessor:
     def _remove_image_syntax_only(self, paragraph, image_info: Dict):
         """只移除图片语法部分，保留其他内容（包括数学公式）"""
         try:
-            import re
-            
             # 获取原始文本
             original_text = paragraph.text
             
             # 移除图片语法部分
             # 移除 Obsidian 格式 ![[filename]]
-            cleaned_text = re.sub(r'!\[\[[^\]]+\]\]', '', original_text)
+            cleaned_text = Patterns.OBSIDIAN_IMAGE_CLEANUP_PATTERN.sub('', original_text)
             # 移除 Markdown 格式 ![alt](path)
-            cleaned_text = re.sub(r'!\[[^\]]*\]\([^)]+\)', '', cleaned_text)
+            cleaned_text = Patterns.MARKDOWN_IMAGE_CLEANUP_PATTERN.sub('', cleaned_text)
             
             # 清理多余的空格
-            cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
+            cleaned_text = Patterns.WHITESPACE_CLEANUP_PATTERN.sub(' ', cleaned_text).strip()
             
             # 只有当清理后的文本确实不同时才更新
             if cleaned_text != original_text:
@@ -338,15 +335,15 @@ class WordPostprocessor:
                         # 检查这个运行是否包含图片语法
                         if '![[' in run.text or '![' in run.text:
                             # 清理这个运行中的图片语法
-                            new_run_text = re.sub(r'!\[\[[^\]]+\]\]', '', run.text)
-                            new_run_text = re.sub(r'!\[[^\]]*\]\([^)]+\)', '', new_run_text)
-                            new_run_text = re.sub(r'\s+', ' ', new_run_text).strip()
+                            new_run_text = Patterns.OBSIDIAN_IMAGE_CLEANUP_PATTERN.sub('', run.text)
+                            new_run_text = Patterns.MARKDOWN_IMAGE_CLEANUP_PATTERN.sub('', new_run_text)
+                            new_run_text = Patterns.WHITESPACE_CLEANUP_PATTERN.sub(' ', new_run_text).strip()
                             
                             if new_run_text != run.text:
                                 run.text = new_run_text
                                 
         except Exception as e:
-            pass  # 静默处理错误
+            logging.warning(f"移除图片语法时出错: {e}")
     
     def _insert_image_before_math_caption(self, caption_paragraph, image_info: Dict):
         """在包含数学公式的caption前插入图片段落"""
@@ -391,8 +388,8 @@ class WordPostprocessor:
     def _process_captions(self):
         """格式化所有图片和表格caption（位置已在预处理阶段调整）"""
         try:
-            # caption识别模式
-            caption_pattern = re.compile(r'^(图片?|图表|表格?)\s*(\d+)\s*[.:：]\s*(.*?)$')
+            # 使用统一的caption识别模式
+            caption_pattern = Patterns.CAPTION_PATTERN
             
             # 格式化所有caption，不再处理位置
             for paragraph in self.doc.paragraphs:
@@ -428,7 +425,7 @@ class WordPostprocessor:
                         self._format_table_caption(paragraph)
             
         except Exception as e:
-            pass  # 静默处理错误
+            logging.error(f"处理caption时出错: {e}", exc_info=True)
     
     def _format_table_caption(self, paragraph):
         """格式化表格caption，与图片caption相同的格式"""
@@ -450,17 +447,7 @@ class WordPostprocessor:
             paragraph_format.first_line_indent = Pt(0)  # caption不缩进
             
         except AttributeError as e:
-            pass  # 静默处理属性错误
+            logging.debug(f"格式化表格caption时遇到属性错误: {e}")
         except Exception as e:
-            pass  # 静默处理其他错误
-    
-    def _clean_zero_width_spaces(self):
-        """清理用于保护编号的特殊标记"""
-        for paragraph in self.doc.paragraphs:
-            # 检查段落文本中是否包含 {{}} 标记
-            if '{{' in paragraph.text and '}}' in paragraph.text:
-                for run in paragraph.runs:
-                    if '{{' in run.text or '}}' in run.text:
-                        # 移除特殊标记
-                        run.text = run.text.replace('{{', '').replace('}}', '')
+            logging.warning(f"格式化表格caption时出错: {e}")
     
