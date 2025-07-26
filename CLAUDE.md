@@ -2,111 +2,66 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+dangerously-skip-permission: false
+
 ## Project Overview
 
-Markdown到Word公文格式转换工具，符合GB/T 9704-2012《党政机关公文格式》国家标准。
+This is a Markdown to Word converter that transforms Markdown files into Word documents compliant with GB/T 9704-2012 (Chinese government document standards). The converter uses a three-stage pipeline: MarkdownPreprocessor → PandocProcessor → WordPostprocessor.
 
-**重要更新**：基于Pandoc引擎，支持LaTeX公式、表格和列表，采用模块化设计。
-
-## Common Commands
+## Build and Run Commands
 
 ```bash
-# Run the converter
-python3 md_to_word.py document.md
-python3 md_to_word.py input.md -o output.docx
-
-# Install dependencies  
+# Install dependencies
 pip3 install -r requirements.txt
 
-# With custom Obsidian vault
+# Basic usage
+python3 md_to_word.py document.md
+
+# Specify output file
+python3 md_to_word.py input.md -o output.docx
+
+# Use with Obsidian Vault environment variables
 OBSIDIAN_VAULT_NAME="我的笔记" python3 md_to_word.py document.md
 ```
 
 ## Architecture Overview
 
 ### Processing Pipeline
-```
-Input .md → MarkdownPreprocessor → PandocProcessor → WordPostprocessor → Output .docx
-              ↓                        ↓                 ↓
-        (cleaned text +          (raw DOCX)      (7 specialized formatters)
-         metadata dict)
-```
+1. **MarkdownPreprocessor** (`src/core/markdown_preprocessor.py`): Cleans Markdown content, extracts metadata, and neutralizes formatting for controlled conversion
+2. **PandocProcessor** (`src/core/pandoc_processor.py`): Converts Markdown to DOCX using Pandoc with MathML support
+3. **WordPostprocessor** (`src/core/word_postprocessor.py`): Applies GB/T 9704-2012 formatting using 7 specialized formatters
 
-### Core Processing Flow
+### Key Components
+- **Formatters** (`src/formatters/`): 7 specialized modules for different document elements (page, paragraph, title, table, list, image, base)
+- **Utils** (`src/utils/`): Support utilities including path validation, XPath caching, and security checks
+- **Config** (`src/config/config.py`): Central configuration for fonts, margins, and document standards
 
-1. **MarkdownPreprocessor** (`src/core/markdown_preprocessor.py`):
-   - Removes YAML frontmatter and metadata
-   - **Critical**: Converts ordered lists `1. ` → `` `1.` `` to prevent Pandoc auto-numbering
-   - Repositions captions after images/tables
-   - Extracts filename as document title
+### Critical Implementation Details
 
-2. **PandocProcessor** (`src/core/pandoc_processor.py`):
-   - Executes Pandoc with `--mathml` for LaTeX formula support
-   - Creates temporary files with proper cleanup
-   - Returns path to generated DOCX
+#### Ordered List Handling
+The preprocessor converts ordered lists from `1. item` to `` `1.` item`` to prevent Pandoc auto-numbering and ensure consistent font formatting per GB/T 9704-2012.
 
-3. **WordPostprocessor** (`src/core/word_postprocessor.py`):
-   - Orchestrates 7 formatters in specific order
-   - Special handling for MathML formulas
-   - Advanced image processing with Obsidian support
+#### Image Processing
+- Supports both standard Markdown `![](path)` and Obsidian `![[filename]]` formats
+- Searches multiple paths: relative to MD file, Obsidian attachments, ./images, ./assets, current directory
+- Auto-adjusts images to full page width (156mm) while maintaining aspect ratio
 
-### Formatter Modules
+#### Math Formula Preservation
+- LaTeX formulas (`$...$` and `$$...$$`) are converted to MathML by Pandoc
+- Special handling throughout pipeline to preserve MathML content in captions and paragraphs
 
-Located in `src/formatters/`:
-- **PageFormatter**: Document grid (22行×28字), page margins
-- **ParagraphFormatter**: Font/size per GB/T 9704-2012, grid alignment
-- **DocumentTitleFormatter**: Title from filename, attachment formatting
-- **TableFormatter**: Table styling (仿宋、三号)
-- **ListFormatter**: List indentation and formatting
-- **ImageFormatter**: Full-width images (156mm), aspect ratio preservation
+## Development Notes
 
-### Key Design Patterns
-
-1. **"Controlled Conversion" Pattern**: Preprocessor neutralizes certain Markdown features (like ordered lists) to ensure post-processor has full control over formatting.
-
-2. **Composition Pattern**: WordPostprocessor delegates to specialized formatters instead of implementing everything in one class.
-
-3. **Math Formula Preservation**: Special detection and handling of MathML content throughout the pipeline.
-
-### Important Data Structures
-
-**Metadata Dictionary**:
-```python
-{
-    'title': str,           # From filename
-    'content': str,         # Preprocessed Markdown  
-    'attachments': list     # Attachment descriptions
-}
-```
-
-**Image Info Structure**:
-```python
-{
-    'path': str,            # Actual file path
-    'title': str,           # Alt text/caption
-    'type': str,            # 'markdown' or 'obsidian'
-    'original': str,        # Original syntax
-    'paragraph': Paragraph, # Document paragraph
-}
-```
-
-### Image Path Search Order
-1. Source Markdown file directory
-2. Obsidian attachments folder
-3. `./images` directory
-4. `./assets` directory
-5. Current directory
+### Dependencies
+- **Pandoc**: Required system dependency for Markdown conversion
+- **python-docx**: Python library for Word document manipulation
 
 ### Security Considerations
-- Path traversal protection in `PathValidator`
-- Command injection prevention using `shlex.quote()`
+- Path traversal protection in `path_validator.py`
+- Safe subprocess execution with proper escaping
 - XML injection prevention in formatters
 
-### Development Notes
-
-- Python 3 + Pandoc required (system install)
-- Main entry: `md_to_word.py`
-- Config: `src/config/config.py`
-- All formatters inherit from `BaseFormatter`
-- XPath queries cached for performance
-- Regex patterns precompiled in `constants.py`
+### GB/T 9704-2012 Standards
+- Page margins: Top 37mm, Bottom 35mm, Left 28mm, Right 26mm
+- Document grid: 28 characters per line, 22 lines per page
+- Fonts: 小标宋体 (title), 仿宋 (body), 黑体 (H2), 楷体 (H3)
