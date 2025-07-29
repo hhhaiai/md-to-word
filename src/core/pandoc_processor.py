@@ -2,12 +2,10 @@ import tempfile
 import os
 import subprocess
 import logging
-import shlex
-from pathlib import Path
 from typing import Optional
 from docx import Document
 from ..config import DocumentConfig
-from ..utils.exceptions import PandocError, PathSecurityError
+from ..utils.exceptions import PandocError
 from ..utils.path_validator import validate_safe_path
 
 class PandocProcessor:
@@ -55,25 +53,14 @@ class PandocProcessor:
             if extra_args:
                 pandoc_args.extend(extra_args)
             
-            # 使用subprocess直接调用pandoc（确保数学公式正确处理）
-            # 使用shlex.quote确保所有参数安全
             cmd = [
                 'pandoc', 
-                shlex.quote(temp_md_path), 
+                temp_md_path, 
                 '-t', 'docx', 
-                '-o', shlex.quote(str(safe_output_path))
+                '-o', str(safe_output_path)
             ]
-            # 安全地添加额外参数
             for arg in pandoc_args:
-                if arg.startswith('--'):
-                    # 对于--开头的参数，分离选项和值
-                    if '=' in arg:
-                        option, value = arg.split('=', 1)
-                        cmd.append(option + '=' + shlex.quote(value))
-                    else:
-                        cmd.append(arg)
-                else:
-                    cmd.append(shlex.quote(arg))
+                cmd.append(arg)
             
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode != 0:
