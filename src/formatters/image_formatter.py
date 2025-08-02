@@ -5,7 +5,6 @@ from docx import Document
 from docx.shared import Pt
 from docx.oxml.shared import OxmlElement, qn
 from docx.oxml.ns import nsdecls
-from docx.oxml.parser import parse_xml
 from typing import Dict, Any
 import re
 
