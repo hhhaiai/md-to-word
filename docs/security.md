@@ -5,9 +5,9 @@
 This project implements several security measures to protect against common vulnerabilities:
 
 ### 1. Command Injection Protection
-- All shell arguments are escaped using `shlex.quote()`
-- Pandoc command arguments are properly sanitized
-- No user input is directly passed to shell commands
+- Pandoc 调用使用 `subprocess.run([...])` 列表参数方式传参，避免 shell 解析
+- 所有用户输入参数不会通过 shell 直接执行
+- 参数构造集中在 `src/core/pandoc_processor.py::_get_pandoc_args`
 
 ### 2. Path Traversal Protection
 - Comprehensive path validation using `path_validator.py`
@@ -22,6 +22,9 @@ This project implements several security measures to protect against common vuln
 - Uses proper XML APIs for element creation
 - Avoids string concatenation for XML construction
 - Sanitizes user input before XML processing
+
+### 4. Non-interactive Safety
+- CLI 提供 `--force` 标志用于非交互覆盖输出文件，避免阻塞式输入
 
 ## Reporting Security Vulnerabilities
 

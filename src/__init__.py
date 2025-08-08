@@ -11,7 +11,6 @@ __description__ = "Markdown到Word公文格式转换工具"
 from .config import DocumentConfig
 from .utils import (
     Patterns, 
-    DocumentFormats,
     Md2WordError,
     FileProcessingError,
     PandocError,
@@ -29,7 +28,6 @@ __all__ = [
     
     # 常量和模式
     'Patterns',
-    'DocumentFormats',
     
     # 异常类
     'Md2WordError',

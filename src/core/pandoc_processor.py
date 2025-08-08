@@ -48,8 +48,9 @@ class PandocProcessor:
                 temp_md_path = temp_md.name
                 self.temp_files.append(temp_md_path)
             
-            # 设置pandoc转换参数
+            # 设置pandoc转换参数，启用TeX数学公式支持
             pandoc_args = self._get_pandoc_args()
+            pandoc_args.extend(['-f', 'markdown+tex_math_dollars+tex_math_single_backslash'])
             if extra_args:
                 pandoc_args.extend(extra_args)
             
@@ -83,10 +84,6 @@ class PandocProcessor:
         args = [
             # 数学公式支持
             f'--{self.pandoc_config["math_method"]}',
-            # 保持原始格式的某些方面
-            '--preserve-tabs',
-            # 处理换行
-            '--wrap=none',
         ]
         
         # 添加配置文件中的额外参数

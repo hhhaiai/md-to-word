@@ -100,8 +100,7 @@ def _convert_ordered_lists_to_text(self, lines: List[str]) -> List[str]:
 def _get_pandoc_args(self) -> list:
     return [
         '--mathml',           # Enable MathML for LaTeX formulas
-        '--preserve-tabs',    # Maintain tab characters
-        '--wrap=none',        # No text wrapping
+        # extra args are defined in config and appended
     ]
 ```
 
@@ -110,9 +109,7 @@ def _get_pandoc_args(self) -> list:
 - Comprehensive exception handling with custom `PandocError`
 - Automatic cleanup of temporary files via `_cleanup_temp_files()`
 
-**`load_docx_for_postprocessing(docx_path: str) -> Document`**
-- Loads the generated DOCX using python-docx
-- Returns Document object ready for post-processing
+<!-- load_docx_for_postprocessing was removed from code-path usage; retained here historically. -->
 
 ### 3. WordPostprocessor (`src/core/word_postprocessor.py`)
 
@@ -257,7 +254,8 @@ Special handling throughout the pipeline to preserve LaTeX formulas:
 
 ### 4. Obsidian Integration
 Full support for Obsidian vault integration:
-- `![[image.png]]` syntax recognition
+- `![[image.png]]` syntax recognition (post-processor reinserts for this syntax)
+- Standard Markdown `![alt](path)` images are handled directly by Pandoc
 - Multi-path image search (vault, attachments, relative paths)
 - Intelligent image title extraction
 
@@ -295,10 +293,9 @@ LINES_PER_PAGE = 22    # 每页22行
 
 ### Exception Hierarchy
 ```python
-FileProcessingError      # File I/O issues
-MarkdownParsingError    # Markdown syntax problems  
-PandocError            # Pandoc conversion failures
-PathSecurityError      # Path traversal attempts
+FileProcessingError   # File I/O issues
+PandocError           # Pandoc conversion failures
+PathSecurityError     # Path traversal attempts
 ```
 
 ### Safety Mechanisms

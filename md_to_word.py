@@ -68,6 +68,12 @@ def main():
         help='启用详细日志输出（用于调试）'
     )
     
+    parser.add_argument(
+        '--force',
+        action='store_true',
+        help='非交互模式下允许覆盖已存在的输出文件，不进行询问'
+    )
+    
     args = parser.parse_args()
     
     # 设置日志级别
@@ -169,17 +175,18 @@ def main():
         # 确保输出目录存在
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        # 如果输出文件已存在，询问是否覆盖
+        # 如果输出文件已存在，依据 --force 决定是否覆盖
         if output_path.exists():
-            # 使用相对路径显示
-            try:
-                rel_output_path = os.path.relpath(output_path)
-            except ValueError:
-                rel_output_path = str(output_path)
-            response = input(f"文件已存在: {rel_output_path}，覆盖？(y/N): ")
-            if response.lower() != 'y':
-                print("已取消操作")
-                sys.exit(0)
+            if not args.force:
+                # 使用相对路径显示
+                try:
+                    rel_output_path = os.path.relpath(output_path)
+                except ValueError:
+                    rel_output_path = str(output_path)
+                response = input(f"文件已存在: {rel_output_path}，覆盖？(y/N): ")
+                if response.lower() != 'y':
+                    print("已取消操作")
+                    sys.exit(0)
                 
     except PathSecurityError as e:
         print(f"安全错误：{e}", file=sys.stderr)
@@ -205,7 +212,8 @@ def main():
         temp_output = pandoc_processor.convert_markdown_to_docx(
             preprocessed_data['content'], 
             str(output_path),
-            title=None  # 不在pandoc阶段添加标题，后处理时添加
+            title=None,  # 不在pandoc阶段添加标题，后处理时添加
+            extra_args=['--resource-path', str(input_path.parent)]
         )
         
         # 应用公文格式

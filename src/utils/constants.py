@@ -18,7 +18,6 @@ class Patterns:
     
     # 列表相关模式
     ORDERED_LIST_PATTERN = re.compile(r'^\d+\.\s*')          # 匹配有序列表 "1. "
-    ORDERED_LIST_PATTERN_PREPROCESSOR = re.compile(r'^\d+\.\s+')  # 预处理器使用的版本（包含空格）
     ORDERED_LIST_DOT_REPLACE_PATTERN = re.compile(r'^(\d+)\.\s+')  # 替换点号模式
     
     NUMBERED_LIST_PATTERN = re.compile(r'^(\s*)(\d+)\.\s+')  # 数字列表模式（带缩进）
@@ -30,12 +29,12 @@ class Patterns:
     MARKDOWN_IMAGE_PATTERN = re.compile(r'!\[([^\]]*)\]\(([^)]+)\)')  # ![alt](url)
     OBSIDIAN_IMAGE_PATTERN = re.compile(r'!\[\[([^\]]+)\]\]')         # ![[filename]]
     
-    # 图片文件名模式
+    # 图片文件名模式（大小写不敏感）
     IMAGE_FILENAME_PATTERNS = [
-        re.compile(r'Pasted image \d+'),                              # Obsidian粘贴图片
-        re.compile(r'^006Fd7o3gy1.*\.(png|jpg|jpeg|gif|bmp)$'),      # 微博图片
-        re.compile(r'^Screenshot.*\.(png|jpg|jpeg|gif|bmp)$'),        # 截图文件
-        re.compile(r'^.*\.(png|jpg|jpeg|gif|bmp)$'),                  # 通用图片文件
+        re.compile(r'Pasted image \d+', re.IGNORECASE),                              # Obsidian粘贴图片
+        re.compile(r'^006Fd7o3gy1.*\.(png|jpg|jpeg|gif|bmp)$', re.IGNORECASE),      # 微博图片
+        re.compile(r'^Screenshot.*\.(png|jpg|jpeg|gif|bmp)$', re.IGNORECASE),        # 截图文件
+        re.compile(r'^.*\.(png|jpg|jpeg|gif|bmp)$', re.IGNORECASE),                  # 通用图片文件
     ]
     
     # 文本处理模式
@@ -66,18 +65,3 @@ class Patterns:
     WHITESPACE_CLEANUP_PATTERN = re.compile(r'\s+')                                # 清理多余空格
     PASTED_IMAGE_CLEANUP_PATTERN = re.compile(r'Pasted image \d{14}')              # 清理粘贴图片名称
 
-# 文档格式常量
-class DocumentFormats:
-    """文档格式相关常量"""
-    
-    # 图片文件名模式（用于清理）
-    IMAGE_CLEANUP_PATTERNS = [
-        'Pasted image',  # Obsidian粘贴的图片
-        '006Fd7o3gy1',   # 微博图片ID
-        '.png',          # PNG文件扩展名
-        '.jpg',          # JPG文件扩展名 
-        '.jpeg',         # JPEG文件扩展名
-        '.gif',          # GIF文件扩展名
-        '.bmp',          # BMP文件扩展名
-        '.webp'          # WEBP文件扩展名
-    ]

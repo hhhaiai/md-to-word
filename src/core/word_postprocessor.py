@@ -6,7 +6,7 @@ import os
 import re
 import logging
 
-from ..config.config import DocumentConfig
+from ..config import DocumentConfig
 from ..utils.constants import Patterns
 from ..formatters import (
     PageFormatter, 
@@ -90,31 +90,8 @@ class WordPostprocessor:
         return docx_path
     
     def _has_math_formula(self, paragraph) -> bool:
-        """检查段落是否包含数学公式"""
-        try:
-            # 1. 检查段落的XML内容是否包含MathML元素（转换后的数学公式）
-            xml_str = paragraph._element.xml
-            if 'oMath' in xml_str or 'oMathPara' in xml_str:
-                return True
-            
-            # 2. 检查段落文本是否包含LaTeX格式的数学公式（原始格式）
-            text = paragraph.text
-            if text:
-                # 检查行内数学公式 $...$
-                if Patterns.LATEX_INLINE_MATH_PATTERN.search(text):
-                    return True
-                # 检查块级数学公式 $$...$$
-                if Patterns.LATEX_BLOCK_MATH_PATTERN.search(text):
-                    return True
-            
-            return False
-        except Exception as e:
-            # 记录错误但不中断处理
-            import logging
-            logging.debug(f"检查数学公式时出错: {e}")
-            return False
-    
-    # 保留原有的公共方法以维持向后兼容性
+        """检测段落是否包含数学公式"""
+        return self.image_formatter._has_math_formula(paragraph)
     def format_tables(self):
         """格式化表格（向后兼容方法）"""
         if self.doc:
@@ -150,33 +127,26 @@ class WordPostprocessor:
         for i, paragraph in enumerate(all_paragraphs):
             text = paragraph.text.strip()
             
-            # 检查是否包含图片语法
-            markdown_match = markdown_image_pattern.search(text)
+            # 仅处理 Obsidian 图片语法，标准 Markdown 图片交由 pandoc 处理
+            markdown_match = None
             obsidian_match = obsidian_image_pattern.search(text)
             
-            if markdown_match or obsidian_match:
+            if obsidian_match:
                 image_counter += 1
                 
                 # 检查是否在同一段落包含caption
                 caption_in_same_para = None
-                if markdown_match or obsidian_match:
-                    # 提取图片语法后的文本作为potential caption
-                    if markdown_match:
-                        image_syntax_end = markdown_match.end()
-                        remaining_text = text[image_syntax_end:].strip()
-                        alt_text = markdown_match.group(1)
-                        image_path = markdown_match.group(2)
-                        image_type = 'markdown'
+                if obsidian_match:
+                    # 提取图片语法后的文本作为 potential caption
+                    image_syntax_end = obsidian_match.end()
+                    remaining_text = text[image_syntax_end:].strip()
+                    image_path = obsidian_match.group(1)
+                    # 确定标题
+                    if 'Pasted image' in image_path:
+                        alt_text = ""  # 空标题，不显示
                     else:
-                        image_syntax_end = obsidian_match.end()
-                        remaining_text = text[image_syntax_end:].strip()
-                        image_path = obsidian_match.group(1)
-                        # 确定标题
-                        if 'Pasted image' in image_path:
-                            alt_text = ""  # 空标题，不显示
-                        else:
-                            alt_text = os.path.splitext(os.path.basename(image_path))[0]
-                        image_type = 'obsidian'
+                        alt_text = os.path.splitext(os.path.basename(image_path))[0]
+                    image_type = 'obsidian'
                     
                     # 检查剩余文本是否为caption
                     if remaining_text and caption_pattern.match(remaining_text):
@@ -214,6 +184,20 @@ class WordPostprocessor:
         # 第二遍：处理图片插入
         for image_info in images_to_process:
             self._replace_paragraph_with_image(image_info['paragraph'], image_info)
+        
+        # 清理残留的图片alt文本段落
+        try:
+            alt_texts = set([
+                info.get('title', '').strip() for info in images_to_process if info.get('title')
+            ])
+            if alt_texts:
+                for paragraph in list(self.doc.paragraphs):
+                    txt = paragraph.text.strip()
+                    if txt and txt in alt_texts and not self._has_math_formula(paragraph):
+                        # 清空而不破坏版式
+                        paragraph.clear()
+        except Exception:
+            pass
         
         # 第三遍：处理caption格式化
         self._process_captions()

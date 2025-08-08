@@ -3,7 +3,7 @@ Utils module - 工具模块
 导出常用的工具类和异常
 """
 
-from .constants import Patterns, DocumentFormats
+from .constants import Patterns
 from .exceptions import (
     Md2WordError,
     FileProcessingError,
@@ -14,12 +14,11 @@ from .exceptions import (
 )
 from .xpath_cache import XPathCache, OptimizedXMLProcessor
 from .config_validator import ConfigValidator
-from .path_validator import validate_safe_path, is_safe_relative_path
+from .path_validator import validate_safe_path
 
 __all__ = [
     # 常量和模式
     'Patterns',
-    'DocumentFormats',
     
     # 异常类
     'Md2WordError',
@@ -37,6 +36,5 @@ __all__ = [
     'ConfigValidator',
     
     # 路径验证
-    'validate_safe_path',
-    'is_safe_relative_path'
+    'validate_safe_path'
 ]
