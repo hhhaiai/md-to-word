@@ -80,29 +80,7 @@ def validate_safe_path(path: str, base_dir: Optional[str] = None, allow_absolute
         raise PathSecurityError(f"路径验证失败: {e}")
 
 
+"""is_safe_relative_path 已不再对外导出，如需使用请从 validate_safe_path 衍生。
+保留占位以避免外部直接引用报错，后续大版本将删除。"""
 def is_safe_relative_path(path: str) -> bool:
-    """
-    检查是否为安全的相对路径
-    
-    Args:
-        path: 要检查的路径
-        
-    Returns:
-        bool: 如果是安全的相对路径返回True
-    """
-    try:
-        path_obj = Path(path)
-        
-        # 必须是相对路径
-        if path_obj.is_absolute():
-            return False
-        
-        # 不能包含危险的路径组件
-        parts = path_obj.parts
-        for part in parts:
-            if part in [".", "..", "~"]:
-                return False
-                
-        return True
-    except Exception:
-        return False
+    return False

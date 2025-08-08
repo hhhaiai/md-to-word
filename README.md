@@ -88,7 +88,7 @@ md-to-word/
 
 ### 安全性
 
-- 命令注入防护：使用 `shlex.quote()` 对所有shell参数进行转义
+- 命令注入防护：使用 `subprocess.run([arg1, arg2, ...])` 的列表参数方式，避免 shell 解析
 - 路径遍历防护：验证所有文件路径，防止目录遍历攻击
 - XML注入防护：使用安全的XML API构建元素
 
@@ -100,6 +100,9 @@ python3 md_to_word.py document.md
 
 # 指定输出文件
 python3 md_to_word.py input.md -o output.docx
+
+# 非交互覆盖已存在输出
+python3 md_to_word.py input.md -o output.docx --force
 
 # 使用自定义 Obsidian Vault
 OBSIDIAN_VAULT_NAME="我的笔记" python3 md_to_word.py document.md

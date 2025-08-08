@@ -4,7 +4,7 @@ import shutil
 from typing import List, Dict, Any
 from pathlib import Path
 from ..config import DocumentConfig
-from ..utils.constants import Patterns, DocumentFormats
+from ..utils.constants import Patterns
 from ..utils.exceptions import FileProcessingError, PathSecurityError
 
 class MarkdownPreprocessor:
@@ -63,6 +63,7 @@ class MarkdownPreprocessor:
         lines = self._filter_yaml_frontmatter(lines)
         lines = self._filter_ending_metadata(lines)
         lines = self._remove_bold_formatting(lines)
+        lines = self._strip_markdown_image_alt_on_own_line(lines)
         lines = self._reposition_captions(lines)
         lines = self._fix_unordered_list_asterisks(lines)
         lines = self._merge_broken_lines(lines)
@@ -107,6 +108,25 @@ class MarkdownPreprocessor:
             return lines[end_index + 1:]
         
         return lines
+
+    def _strip_markdown_image_alt_on_own_line(self, lines: List[str]) -> List[str]:
+        """当 Markdown 图片语法独占一行时，移除 alt 文本，避免在转换后保留可见文字。
+
+        仅处理整行完全为 `![alt](path)` 的场景，保留缩进；
+        若图片语法与其他文字同一行，保持不变。
+        """
+        processed = []
+        pattern = Patterns.MARKDOWN_IMAGE_PATTERN
+        for line in lines:
+            stripped = line.strip()
+            m = pattern.fullmatch(stripped)
+            if m:
+                url = m.group(2)
+                indent = line[:len(line) - len(line.lstrip())]
+                processed.append(f"{indent}![]({url})")
+            else:
+                processed.append(line)
+        return processed
     
     def _filter_ending_metadata(self, lines: List[str]) -> List[str]:
         """过滤结尾的Date和标签"""
@@ -193,6 +213,11 @@ class MarkdownPreprocessor:
         if self._is_special_format_line(next_line):
             return False
             
+        # 若下一行是有序列表项或多级编号，不能合并（防止列表挤成一行）
+        if (Patterns.SIMPLE_ORDERED_LIST_WITH_CONTENT.match(next_line) or 
+            Patterns.MULTI_LEVEL_NUMBER_PATTERN.match(next_line)):
+            return False
+
         # 短行（少于20字符）更可能是被意外分割的部分
         if len(next_line) >= 20:
             return False
@@ -450,6 +475,9 @@ class MarkdownPreprocessor:
                 indent = ''  # Multi-level patterns don't capture indent
                 # 使用反引号（inline code）包裹整个编号，阻止 Pandoc 识别为列表
                 new_line = f"{indent}`{numbering}` {content}"
+                # 确保与上一行之间留空行，使其在 Pandoc 输出中成为独立段落
+                if processed_lines and processed_lines[-1].strip() != '':
+                    processed_lines.append('')
                 processed_lines.append(new_line)
             else:
                 # 再匹配简单有序列表格式（数字 + 点 + 空格）
@@ -460,6 +488,8 @@ class MarkdownPreprocessor:
                     content = simple_match.group(3)
                     # 使用反引号包裹
                     new_line = f"{indent}`{number}.` {content}"
+                    if processed_lines and processed_lines[-1].strip() != '':
+                        processed_lines.append('')
                     processed_lines.append(new_line)
                 else:
                     processed_lines.append(line)

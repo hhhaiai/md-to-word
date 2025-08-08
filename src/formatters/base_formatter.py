@@ -2,7 +2,7 @@
 基础格式化器类 - 提供共同的功能和配置
 """
 from docx.oxml.shared import OxmlElement, qn
-from ..config.config import DocumentConfig
+from ..config import DocumentConfig
 from ..utils.constants import Patterns
 
 

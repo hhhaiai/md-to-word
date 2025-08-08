@@ -8,9 +8,9 @@ from docx.oxml.ns import nsdecls
 from typing import Dict, Any
 import re
 
-from ..config.config import DocumentConfig
+from ..config import DocumentConfig
 from ..utils.xpath_cache import OptimizedXMLProcessor
-from ..utils.constants import Patterns, DocumentFormats
+from ..utils.constants import Patterns
 from ..utils.exceptions import (
     ImageProcessingError,
     XMLProcessingError
@@ -36,13 +36,10 @@ class ImageFormatter(BaseFormatter):
                 for drawing in drawings:
                     self._format_single_image(drawing)
             
-            # 2. 扫描所有段落，查找并移除图片文件名文本（即使没有绘制元素）
-            self._remove_image_captions_from_all_paragraphs(doc)
-            
-            # 3. 格式化图片标题段落（处理"Image Caption"样式和"图 X："格式）
+            # 2. 格式化图片标题段落（处理"Image Caption"样式和"图 X："格式）
             self._format_all_image_captions(doc)
             
-            # 4. 移除因删除图片标题而产生的空白段落
+            # 3. 移除因删除图片标题而产生的空白段落
             self._remove_empty_paragraphs_after_image_cleanup(doc)
                     
         except (AttributeError, KeyError) as e:
@@ -120,63 +117,12 @@ class ImageFormatter(BaseFormatter):
             # XML结构访问错误，记录但不中断
             import logging
             logging.debug(f"移除图片名称时XML结构访问错误: {e}")
-        except Exception as e:
-            import logging
-            logging.debug(f"移除图片名称时出现未知错误: {e}")
+        except Exception:
+            pass
     
     def _remove_image_captions_from_all_paragraphs(self, doc: Document):
-        """扫描所有段落，移除图片文件名文本（不依赖绘制元素）"""
-        try:
-            image_filename_patterns = DocumentFormats.IMAGE_CLEANUP_PATTERNS
-            
-            for paragraph in doc.paragraphs:
-                if not paragraph.text.strip():
-                    continue
-                
-                # 检查段落是否包含数学公式，如果包含则跳过
-                if self._has_math_formula(paragraph):
-                    continue
-                
-                # 检查段落文本是否包含图片文件名模式
-                text_contains_image_pattern = any(
-                    pattern in paragraph.text for pattern in image_filename_patterns
-                )
-                
-                if text_contains_image_pattern:
-                    # 逐个检查段落中的run
-                    for run in paragraph.runs:
-                        if run.text:
-                            original_text = run.text
-                            modified_text = original_text
-                            
-                            # 移除包含图片文件名模式的部分，但保护数学公式
-                            for pattern in image_filename_patterns:
-                                if pattern in modified_text:
-                                    # 如果是Pasted image模式，移除整个"Pasted image 日期时间"格式
-                                    if pattern == 'Pasted image':
-                                        modified_text = Patterns.PASTED_IMAGE_CLEANUP_PATTERN.sub('', modified_text)
-                                    else:
-                                        # 对于文件扩展名，移除包含该扩展名的词，但保护数学公式
-                                        words = modified_text.split()
-                                        filtered_words = []
-                                        for word in words:
-                                            # 检查词是否包含数学公式，如果包含则保留
-                                            if (Patterns.LATEX_INLINE_MATH_PATTERN.search(word) or 
-                                                Patterns.LATEX_BLOCK_MATH_PATTERN.search(word)):
-                                                filtered_words.append(word)
-                                            elif pattern not in word:
-                                                filtered_words.append(word)
-                                            # 如果词既包含文件名模式又包含数学公式，优先保护数学公式
-                                        modified_text = ' '.join(filtered_words)
-                            
-                            # 只在文本确实改变时更新
-                            if modified_text != original_text:
-                                run.text = modified_text.strip()
-                                
-        except Exception as e:
-            # 记录错误但不中断处理
-            import logging
-            logging.debug(f"移除图片标题文本时出错: {e}")
+        """废弃方法，保留接口兼容性"""
+        pass
     
     def _format_all_image_captions(self, doc: Document):
         """格式化所有图片标题段落（包括Pandoc生成的"Image Caption"样式）"""
@@ -490,7 +436,7 @@ class ImageFormatter(BaseFormatter):
             return False
         
         for pattern in Patterns.IMAGE_FILENAME_PATTERNS:
-            if pattern.search(text, re.IGNORECASE):
+            if pattern.search(text):
                 # 进一步检查是否包含中文描述
                 if Patterns.CHINESE_CHAR_PATTERN.search(text) and len(text) > 20:
                     # 包含中文且较长，可能是有意义的描述
