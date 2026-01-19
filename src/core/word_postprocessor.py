@@ -81,7 +81,10 @@ class WordPostprocessor:
         self.page_formatter.add_page_numbers(self.doc)
         self.list_formatter.format_lists(self.doc)
         self.table_formatter.format_tables(self.doc)
-        
+
+        # 处理分页符标记
+        self._process_page_breaks()
+
         # 新的图片处理方式：直接查找并替换图片语法
         self.process_and_insert_images()
         
@@ -92,6 +95,23 @@ class WordPostprocessor:
     def _has_math_formula(self, paragraph) -> bool:
         """检测段落是否包含数学公式"""
         return self.image_formatter._has_math_formula(paragraph)
+
+    def _process_page_breaks(self):
+        """处理 [PAGEBREAK] 标记，转换为实际分页符"""
+        from docx.oxml.ns import qn
+        from docx.oxml import OxmlElement
+
+        for paragraph in self.doc.paragraphs:
+            if paragraph.text.strip() == '[PAGEBREAK]':
+                # 清空段落内容
+                paragraph.clear()
+
+                # 添加分页符
+                run = paragraph.add_run()
+                br = OxmlElement('w:br')
+                br.set(qn('w:type'), 'page')
+                run._element.append(br)
+
     def format_tables(self):
         """格式化表格（向后兼容方法）"""
         if self.doc:

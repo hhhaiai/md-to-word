@@ -96,11 +96,13 @@ class ParagraphFormatter(BaseFormatter):
         """获取标题级别（只处理一级和二级标题）"""
         # 检查Word内置标题样式
         if paragraph.style.name == 'Heading 1':
-            return 1  # # → 黑体 (但我们通常跳过这个)
+            return 1  # # → 黑体 (文档主标题，通常跳过)
         elif paragraph.style.name == 'Heading 2':
             return 1  # ## → 黑体
         elif paragraph.style.name == 'Heading 3':
             return 2  # ### → 楷体
+        elif paragraph.style.name.startswith('Heading'):
+            return 0  # #### 及以下 → 正文样式（仿宋）
         
         # 根据文本内容判断级别（处理中文标题格式）
         if Patterns.HEADING_PATTERNS[0].match(text):
@@ -118,20 +120,23 @@ class ParagraphFormatter(BaseFormatter):
             # 如果包含数学公式，使用特殊的格式化方法
             self._format_paragraph_with_math(paragraph, level=0, is_heading=False)
             return
-        
+
         # 为所有运行应用仿宋格式
         for run in paragraph.runs:
             run.font.name = self.config.FONTS['fangsong']
             run.font.size = self.config.FONT_SIZES['body']
+            run.bold = False
+            run.italic = False
+            run.font.color.rgb = RGBColor(0, 0, 0)
             self._set_chinese_font(run, self.config.FONTS['fangsong'])
-        
+
         # 设置段落格式
         paragraph.alignment = self.config.ALIGNMENTS['justify']
         paragraph_format = paragraph.paragraph_format
         paragraph_format.first_line_indent = self.config.FIRST_LINE_INDENT
         paragraph_format.space_after = Pt(0)
         paragraph_format.space_before = Pt(0)
-        
+
         # 启用文档网格对齐
         self._enable_snap_to_grid(paragraph)
     
@@ -170,6 +175,9 @@ class ParagraphFormatter(BaseFormatter):
                             # 正文段落格式
                             run.font.name = self.config.FONTS['fangsong']
                             run.font.size = self.config.FONT_SIZES['body']
+                            run.bold = False
+                            run.italic = False
+                            run.font.color.rgb = RGBColor(0, 0, 0)
                             self._set_chinese_font(run, self.config.FONTS['fangsong'])
                 except Exception as e:
                     # 记录错误但不中断处理

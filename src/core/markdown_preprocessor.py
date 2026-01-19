@@ -69,7 +69,8 @@ class MarkdownPreprocessor:
         lines = self._merge_broken_lines(lines)
         lines = self._skip_first_level_headers(lines)
         lines = self._convert_ordered_lists_to_text(lines)
-        
+        lines = self._convert_hr_to_pagebreak(lines)
+
         # 重新组合内容
         processed_content = '\n'.join(lines)
         
@@ -457,42 +458,81 @@ class MarkdownPreprocessor:
     
     def _convert_ordered_lists_to_text(self, lines: List[str]) -> List[str]:
         """将所有有序列表和多级编号转换为正文格式
-        
+
         规则：
         1. 所有形如 '1. 内容' 的有序列表都转换为正文
         2. 所有形如 '2.1.1 内容' 的多级编号也转换为正文
         3. 使用特殊标记包裹编号，完全阻止 Pandoc 识别
+        4. 保留嵌套无序列表的缩进，让其在Word中保持视觉层级
         """
         processed_lines = []
-        
+
         for line in lines:
             # 先匹配多级编号格式（如 2.1.1 内容）
             multi_match = Patterns.MULTI_LEVEL_NUMBER_PATTERN.match(line)
             if multi_match:
-                # Group 1 is the numbering (e.g., "2.1.1"), group 2 is the content
                 numbering = multi_match.group(1)
                 content = multi_match.group(2)
-                indent = ''  # Multi-level patterns don't capture indent
-                # 使用反引号（inline code）包裹整个编号，阻止 Pandoc 识别为列表
-                new_line = f"{indent}`{numbering}` {content}"
-                # 确保与上一行之间留空行，使其在 Pandoc 输出中成为独立段落
+                new_line = f"`{numbering}` {content}"
                 if processed_lines and processed_lines[-1].strip() != '':
                     processed_lines.append('')
                 processed_lines.append(new_line)
-            else:
-                # 再匹配简单有序列表格式（数字 + 点 + 空格）
-                simple_match = Patterns.SIMPLE_ORDERED_LIST_WITH_CONTENT.match(line)
-                if simple_match:
-                    indent = simple_match.group(1)
-                    number = simple_match.group(2)
-                    content = simple_match.group(3)
-                    # 使用反引号包裹
-                    new_line = f"{indent}`{number}.` {content}"
-                    if processed_lines and processed_lines[-1].strip() != '':
+                continue
+
+            # 再匹配简单有序列表格式（数字 + 点 + 空格）
+            simple_match = Patterns.SIMPLE_ORDERED_LIST_WITH_CONTENT.match(line)
+            if simple_match:
+                indent = simple_match.group(1)
+                number = simple_match.group(2)
+                content = simple_match.group(3)
+                new_line = f"{indent}`{number}.` {content}"
+                if processed_lines and processed_lines[-1].strip() != '':
+                    processed_lines.append('')
+                processed_lines.append(new_line)
+                continue
+
+            # 展平嵌套的无序列表项，添加特殊标记以便Word postprocessor识别
+            # 使用 [NESTED] 标记，postprocessor会移除它并应用4字符缩进
+            if Patterns.INDENTED_LIST_PATTERN.match(line):
+                stripped = line.lstrip()
+                # 在 - 后插入标记: "- item" -> "- [NESTED]item"
+                if stripped.startswith('- '):
+                    stripped = '- [NESTED]' + stripped[2:]
+                elif stripped.startswith('* '):
+                    stripped = '* [NESTED]' + stripped[2:]
+                # 只在第一个bullet前加空行（上一行不是bullet时）
+                if processed_lines:
+                    last_line = processed_lines[-1].strip()
+                    # 检查是否是bullet行（可能带[NESTED]标记）
+                    is_bullet = (last_line.startswith('- ') or last_line.startswith('* ') or
+                                 last_line.startswith('- [NESTED]') or last_line.startswith('* [NESTED]'))
+                    if last_line and not is_bullet:
                         processed_lines.append('')
-                    processed_lines.append(new_line)
-                else:
-                    processed_lines.append(line)
-        
+                processed_lines.append(stripped)
+                continue
+
+            processed_lines.append(line)
+
         return processed_lines
-    
+
+    def _convert_hr_to_pagebreak(self, lines: List[str]) -> List[str]:
+        """将水平线 --- 转换为分页符标记（排除front/end matter）
+
+        注意：YAML front matter已在之前被过滤，这里只处理内容中的---
+        """
+        processed_lines = []
+
+        for line in lines:
+            stripped = line.strip()
+            # 检测独立的 --- 行（水平线）
+            if stripped == '---' or stripped == '***' or stripped == '___':
+                # 确保前后有空行，使其成为独立段落
+                if processed_lines and processed_lines[-1].strip() != '':
+                    processed_lines.append('')
+                processed_lines.append('[PAGEBREAK]')
+                processed_lines.append('')  # 后面也加空行
+            else:
+                processed_lines.append(line)
+
+        return processed_lines
+
