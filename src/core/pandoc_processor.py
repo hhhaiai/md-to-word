@@ -50,7 +50,7 @@ class PandocProcessor:
             
             # 设置pandoc转换参数，启用TeX数学公式支持
             pandoc_args = self._get_pandoc_args()
-            pandoc_args.extend(['-f', 'markdown+tex_math_dollars+tex_math_single_backslash'])
+            pandoc_args.extend(['-f', 'markdown-smart+tex_math_dollars+tex_math_single_backslash'])
             if extra_args:
                 pandoc_args.extend(extra_args)
             
